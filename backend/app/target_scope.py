@@ -151,7 +151,7 @@ async def batch_set_enabled(
         )
         await db.commit()
         async with db.execute(
-            f"SELECT id, address, interval_ms, enabled FROM targets WHERE id IN ({placeholders})",
+            f"SELECT id, address, interval_ms, probe_type, port, enabled FROM targets WHERE id IN ({placeholders})",
             target_ids,
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
@@ -162,7 +162,10 @@ async def batch_set_enabled(
 
     for r in rows:
         if r["enabled"]:
-            ping_manager.add_target(r["id"], r["address"], r["interval_ms"])
+            ping_manager.add_target(
+                r["id"], r["address"], r["interval_ms"],
+                r.get("probe_type") or "icmp", r.get("port"),
+            )
         else:
             ping_manager.remove_target(r["id"])
 

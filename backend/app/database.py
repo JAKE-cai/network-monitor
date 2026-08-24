@@ -112,6 +112,9 @@ _MIGRATIONS = [
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )""",
     "CREATE INDEX IF NOT EXISTS idx_te_target_ts ON target_events(target_id, ts)",
+    # Probe type and port for TCP/UDP/HTTP targets.
+    "ALTER TABLE targets ADD COLUMN probe_type TEXT NOT NULL DEFAULT 'icmp'",  # icmp | tcp | udp | http
+    "ALTER TABLE targets ADD COLUMN port INTEGER",                            # required for tcp/udp/http
 ]
 
 

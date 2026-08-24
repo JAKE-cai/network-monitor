@@ -167,6 +167,11 @@
       background: #1f6feb22; color: #58a6ff; border: 1px solid #58a6ff44;
     }
     [data-bs-theme="light"] .group-badge { background: #0969da15; color: #0550ae; border-color: #0969da44; }
+    .probe-badge {
+      font-size: 10px; padding: 1px 6px; border-radius: 8px;
+      background: #3fb95022; color: #3fb950; border: 1px solid #3fb95044;
+    }
+    [data-bs-theme="light"] .probe-badge { background: #1a7f3722; color: #1a7f37; border-color: #1a7f3744; }
     .tag-chip {
       font-size: 10px; padding: 1px 5px; border-radius: 6px;
       background: var(--bg-card2); border: 1px solid var(--border); color: var(--text-muted);
@@ -482,8 +487,10 @@
             </div>
 
             <div class="d-flex justify-content-between align-items-center mt-2">
-              <span v-if="t.group_name" class="group-badge">{{ t.group_name }}</span>
-              <span v-else></span>
+              <span class="d-flex align-items-center gap-2">
+                <span v-if="t.group_name" class="group-badge">{{ t.group_name }}</span>
+                <span class="probe-badge" :title="probeTitle(t.probe_type)">{{ probeLabel(t.probe_type) }}</span>
+              </span>
               <span class="ping-interval-badge">{{ t.interval_ms }}ms/次</span>
             </div>
           </div>
@@ -799,13 +806,28 @@
             <input class="form-control" v-model="form.name" placeholder="如: 生产服务器" />
           </div>
           <div class="mb-3">
-            <label class="form-label text-secondary">地址 (IP / 域名) <span class="text-danger">*</span></label>
-            <input class="form-control" v-model="form.address" placeholder="如: 8.8.8.8 或 example.com" />
+            <label class="form-label text-secondary">探测类型 <span class="text-danger">*</span></label>
+            <select class="form-select" v-model="form.probe_type" @change="onProbeTypeChange">
+              <option value="icmp">ICMP Ping</option>
+              <option value="tcp">TCP 端口连通性</option>
+              <option value="udp">UDP 探测</option>
+              <option value="http">HTTP(S) 请求</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label text-secondary">地址 <span class="text-danger">*</span></label>
+            <input class="form-control" v-model="form.address"
+              :placeholder="addrPlaceholder" />
+            <div class="form-text text-secondary">{{ addrHint }}</div>
+          </div>
+          <div class="mb-3" v-if="form.probe_type !== 'icmp'">
+            <label class="form-label text-secondary">端口 <span class="text-danger">*</span></label>
+            <input class="form-control" type="number" v-model.number="form.port" min="1" max="65535" placeholder="如: 443" />
           </div>
           <div class="mb-3">
             <label class="form-label text-secondary">检测间隔 (ms)</label>
-            <input class="form-control" type="number" v-model.number="form.interval_ms" min="500" max="60000" step="500" />
-            <div class="form-text text-secondary">最小 500ms，建议 1000ms（每秒 1 次）</div>
+            <input class="form-control" type="number" v-model.number="form.interval_ms" min="100" max="60000" step="100" />
+            <div class="form-text text-secondary">最小 100ms，建议 1000ms（每秒 1 次）</div>
           </div>
           <div class="mb-3">
             <label class="form-label text-secondary">分组</label>
@@ -1312,9 +1334,25 @@ createApp({
 
     // edit/add
     const editMode = ref(false);
-    const form = ref({ id: null, name: '', address: '', interval_ms: 1000, enabled: true, group_name: '', tags: '' });
+    const form = ref({ id: null, name: '', address: '', interval_ms: 1000, enabled: true, group_name: '', tags: '', probe_type: 'icmp', port: null });
     const saving = ref(false);
     const delTarget = ref(null);
+
+    // probe-type dependent address placeholder / hint
+    const addrPlaceholder = computed(() => {
+      switch (form.value.probe_type) {
+        case 'http': return '如: http://example.com 或 http://1.2.3.4:8080/api';
+        case 'tcp': case 'udp': return '如: 8.8.8.8:53 或 example.com:443';
+        default: return '如: 8.8.8.8 或 example.com';
+      }
+    });
+    const addrHint = computed(() => {
+      switch (form.value.probe_type) {
+        case 'http': return 'HTTP 使用完整 URL（含 http:// 或 https://）';
+        case 'tcp': case 'udp': return 'TCP/UDP 使用 地址:端口 格式';
+        default: return 'ICMP 使用域名、IPv4 或 IPv6';
+      }
+    });
 
     // toasts
     const toasts = ref([]);
@@ -1449,6 +1487,12 @@ createApp({
     }
 
     /* ─────────────── packet bar ─────────────── */
+    function probeLabel(pt) {
+      return { icmp: 'ICMP', tcp: 'TCP', udp: 'UDP', http: 'HTTP' }[pt] || 'ICMP';
+    }
+    function probeTitle(pt) {
+      return { icmp: 'ICMP Ping', tcp: 'TCP 端口连通性', udp: 'UDP 探测', http: 'HTTP(S) 请求' }[pt] || 'ICMP Ping';
+    }
     function _segClass(inSec) {
       if (!inSec.length) return 'seg-none';
       if (inSec.some(p => Number(p.is_loss) === 1)) return 'seg-bad';
@@ -2079,13 +2123,19 @@ createApp({
 
     function openAddModal() {
       editMode.value = false;
-      form.value = { id: null, name: '', address: '', interval_ms: 1000, enabled: true, group_name: '', tags: '' };
+      form.value = { id: null, name: '', address: '', interval_ms: 1000, enabled: true, group_name: '', tags: '', probe_type: 'icmp', port: null };
       bsEdit.show();
     }
     function openEditModal(t) {
       editMode.value = true;
-      form.value = { ...t, enabled: !!t.enabled };
+      form.value = { ...t, enabled: !!t.enabled, probe_type: t.probe_type || 'icmp', port: t.port ?? null };
       bsEdit.show();
+    }
+    function onProbeTypeChange() {
+      // Keep port/address placeholders sensible when switching type
+      if (form.value.probe_type !== 'icmp' && !form.value.port) {
+        form.value.port = null;
+      }
     }
     function confirmDelete(t) {
       delTarget.value = t;
@@ -2368,7 +2418,7 @@ createApp({
       toggleScheduleGroup, toggleScheduleTag,
       formatWeekdays, formatScope,
       allGroups, allTags, filteredTargets, visibleGroups,
-      packetBar,
+      packetBar, probeLabel, probeTitle,
       sel, dTab,
       chartLoading, chartEmpty, chartStats, presets, rangePreset, customActive, cStart, cEnd,
       lossLoading, lossItems, lossTotal, lossMerged, lossPage, lossTotalPages,
@@ -2386,7 +2436,7 @@ createApp({
       openDetail,
       applyPreset, applyCustom, fetchChartData,
       fetchLossEvents, changeLossPage, switchTab,
-      openAddModal, openEditModal, confirmDelete,
+      openAddModal, openEditModal, onProbeTypeChange, addrPlaceholder, addrHint, confirmDelete,
       saveTarget, toggleTarget, cloneTarget, doDelete,
     };
   }
