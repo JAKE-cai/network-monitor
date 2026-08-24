@@ -115,6 +115,48 @@ _MIGRATIONS = [
     # Probe type and port for TCP/UDP/HTTP targets.
     "ALTER TABLE targets ADD COLUMN probe_type TEXT NOT NULL DEFAULT 'icmp'",  # icmp | tcp | udp | http
     "ALTER TABLE targets ADD COLUMN port INTEGER",                            # required for tcp/udp/http
+    # ── Alerting system ──────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS alerts (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        name          TEXT    NOT NULL,
+        condition     TEXT    NOT NULL,   -- 'loss' | 'latency'
+        scope_type    TEXT    NOT NULL DEFAULT 'all',  -- all | group | tag | ids
+        scope_value   TEXT    NOT NULL DEFAULT '',
+        loss_pct      REAL    NOT NULL DEFAULT 0,       -- for loss: loss rate threshold (0-100)
+        loss_consecutive INTEGER NOT NULL DEFAULT 0,    -- for loss: consecutive loss count
+        latency_ms    REAL    NOT NULL DEFAULT 0,       -- for latency: threshold in ms
+        latency_count INTEGER NOT NULL DEFAULT 0,       -- for latency: how many samples over threshold in window
+        window_count  INTEGER NOT NULL DEFAULT 60,      -- sample window size (e.g. last 60 probes)
+        repeat_min    INTEGER NOT NULL DEFAULT 30,      -- repeat reminder interval (minutes), 0 = once only
+        enabled       INTEGER NOT NULL DEFAULT 1,
+        created_at    INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
+    """CREATE TABLE IF NOT EXISTS alert_history (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        alert_id    INTEGER NOT NULL,
+        target_id   INTEGER NOT NULL,
+        target_name TEXT    NOT NULL DEFAULT '',
+        status      TEXT    NOT NULL,      -- 'firing' | 'recovered'
+        detail      TEXT    NOT NULL DEFAULT '',
+        value       REAL,
+        started_at  INTEGER NOT NULL,
+        recovered_at INTEGER,
+        notify_count INTEGER NOT NULL DEFAULT 0,
+        last_notify  INTEGER
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_ah_alert_target ON alert_history(alert_id, target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ah_status ON alert_history(status, started_at)",
+    """CREATE TABLE IF NOT EXISTS alert_suppressions (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT    NOT NULL,
+        scope_type TEXT    NOT NULL DEFAULT 'all',  -- all | group | tag | ids
+        scope_value TEXT   NOT NULL DEFAULT '',
+        start_ts   INTEGER NOT NULL,
+        end_ts     INTEGER NOT NULL,
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_as_time ON alert_suppressions(start_ts, end_ts)",
 ]
 
 

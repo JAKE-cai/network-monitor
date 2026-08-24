@@ -58,14 +58,16 @@
 
   <div class="help-wrap">
     <p class="mb-4" style="color:var(--text-muted)">
-      本文介绍 YTPing 监控平台的主要功能与常见操作。默认访问地址：<code>http://&lt;服务器&gt;:3000</code>。
+      本文介绍 YTPing 监控平台的主要功能与常见操作。默认访问地址：<code>http://&lt;服务器&gt;:3000</code>。<br>
+      导航栏布局：<strong>刷新 · 批量启停 · 添加目标 · 更多（使用说明 / 定时任务 / 告警）· 主题 · 用户菜单</strong>。
     </p>
 
     <section class="help-card">
       <h2><i class="bi bi-box-arrow-in-right me-2"></i>登录与安全</h2>
       <ul>
-        <li>首次部署后使用默认管理员密码登录（请尽快在右上角菜单中<strong>修改密码</strong>）。</li>
-        <li>登录状态保存在浏览器本地；退出登录或改密后需重新登录。</li>
+        <li>首次部署后使用默认管理员密码登录（请尽快在右上角用户菜单中<strong>修改密码</strong>，新密码至少 8 位）。</li>
+        <li>登录失败连续 10 次将触发 10 分钟登录锁定，防止暴力破解。</li>
+        <li>会话有效期 7 天；退出登录或修改密码后，所有旧会话立即失效。</li>
       </ul>
     </section>
 
@@ -73,14 +75,22 @@
       <h2><i class="bi bi-bullseye me-2"></i>监控目标</h2>
       <h3>添加 / 编辑</h3>
       <ul>
-        <li>点击<strong>添加目标</strong>，填写名称、地址（域名或 IP）、探测间隔（500ms～60s，默认 1 秒）。</li>
-        <li>可设置<strong>分组</strong>、<strong>标签</strong>（多个标签用英文逗号分隔），便于首页筛选。</li>
-        <li>卡片上显示 <code>ID n</code> 为系统内部编号，定时任务「指定 ID」范围时使用。</li>
+        <li>点击<strong>添加目标</strong>，选择<strong>探测类型</strong>并填写对应地址与端口。</li>
+        <li><strong>探测类型</strong>支持四种：</li>
+        <ul>
+          <li><code>ICMP Ping</code>：地址填域名 / IPv4 / IPv6（如 <code>8.8.8.8</code> 或 <code>example.com</code>）。</li>
+          <li><code>TCP</code>：地址填 <code>主机:端口</code>（如 <code>1.1.1.1:443</code>），测量 TCP 握手延迟。</li>
+          <li><code>UDP</code>：地址填 <code>主机:端口</code>（如 <code>8.8.8.8:53</code>），发送数据包等待回包，超时视为丢包。</li>
+          <li><code>HTTP(S)</code>：地址填完整 URL（如 <code>http://example.com</code>），测量请求延迟，4xx/5xx 视为丢包。</li>
+        </ul>
+        <li><strong>探测间隔</strong>：100ms～60s（默认 1 秒）。间隔越小采样越密，注意目标数量与数据库增长。</li>
+        <li>可设置<strong>分组</strong>、<strong>标签</strong>（多个标签用英文逗号分隔），便于首页筛选与告警/屏蔽范围选择。</li>
+        <li>卡片上显示 <code>ID n</code> 为系统内部编号，定时任务 / 告警 / 屏蔽「指定 ID」范围时使用。</li>
       </ul>
       <h3>卡片菜单</h3>
       <ul>
-        <li><strong>编辑</strong>、<strong>克隆</strong>（复制配置并自动命名）、<strong>启用/停用</strong>、<strong>删除</strong>。</li>
-        <li>点击卡片进入详情：实时、延迟趋势、丢包记录、历史统计。</li>
+        <li>卡片右上角 <code>⋮</code> 菜单：<strong>编辑</strong>、<strong>克隆</strong>（复制配置并自动命名）、<strong>启用/停用</strong>、<strong>删除</strong>。</li>
+        <li>点击卡片进入详情页：实时、延迟趋势、丢包记录、历史统计。</li>
       </ul>
     </section>
 
@@ -88,27 +98,28 @@
       <h2><i class="bi bi-grid me-2"></i>首页看板</h2>
       <ul>
         <li>顶部统计：正常 / 告警 / 异常 / 停用数量（基于近 1 分钟探测）。</li>
-        <li>可按<strong>分组</strong>、<strong>标签</strong>、关键词筛选；支持<strong>刷新</strong>自动更新。</li>
-        <li>卡片内<strong>20 格色块</strong>表示最近约 20 秒每秒探测结果（绿/黄/红/灰）。</li>
-        <li>均值延迟、丢包率标注为「近 1 分钟」。</li>
+        <li><strong>筛选</strong>：分组、标签均支持<strong>多选</strong>（再点取消，点「全部」清空），可叠加关键词搜索；分组与标签之间为「与」关系，同组内多选为「或」。</li>
+        <li>卡片内<strong>20 格色块</strong>表示最近约 20 秒每秒探测结果（绿=正常 / 黄=告警 / 红=异常 / 灰=无数据）。</li>
+        <li>均值延迟、丢包率标注为「近 1 分钟」；卡片显示探测类型徽标（ICMP/TCP/UDP/HTTP）。</li>
       </ul>
     </section>
 
     <section class="help-card">
       <h2><i class="bi bi-graph-up me-2"></i>详情页说明</h2>
       <ul>
-        <li><strong>实时</strong>：近 5 分钟折线图，SSE 推送；显示当前样本与丢包率。</li>
-        <li><strong>延迟趋势</strong>：自定义 1H～7D 或时间范围，查看 Min/Avg/Max 与丢包率曲线及区间统计。</li>
-        <li><strong>丢包记录</strong>：分页浏览历史丢包时间点。</li>
-        <li><strong>历史统计</strong>：7 天前数据压缩为延迟分布桶与丢包比例；可筛选时间并<strong>手动压缩</strong>更早的原始数据。</li>
+        <li><strong>实时</strong>：近 5 分钟折线图，SSE 推送；显示最新延迟、5 分钟均值 / 最小 / 最大 / 丢包次数 / 丢包率。</li>
+        <li><strong>延迟趋势</strong>：1H～7D 快选或自定义时间范围，查看 Min/Avg/Max 与丢包率曲线及区间统计；<strong>停用期间以灰色标记</strong>（非红色丢包）。</li>
+        <li><strong>丢包记录</strong>：分页浏览历史丢包；<strong>连续丢包合并为一条记录</strong>并显示时间区间与次数。</li>
+        <li><strong>历史统计</strong>：超过 7 天的原始数据压缩为延迟分布桶（8 档）与丢包比例；可筛选时间并<strong>手动压缩</strong>更早的原始数据。</li>
+        <li>点击弹窗外部空白处可关闭详情。</li>
       </ul>
     </section>
 
     <section class="help-card">
       <h2><i class="bi bi-toggles me-2"></i>批量启停</h2>
       <ul>
-        <li>导航栏 <strong>批量启停</strong>：对「当前筛选结果 / 全部 / 指定分组 / 指定标签」一次性启用或停用。</li>
-        <li><strong>停用</strong>后不再 ping，适合夜间关机、维护窗口，避免无意义丢包入库。</li>
+        <li>导航栏 <strong>批量启停</strong>：对「当前筛选结果 / 全部 / 指定分组 / 指定标签 / 指定 ID」一次性启用或停用。</li>
+        <li><strong>停用</strong>后不再探测，适合夜间关机、维护窗口，避免无意义丢包入库。</li>
       </ul>
     </section>
 
@@ -117,14 +128,43 @@
       <ul>
         <li>按容器<strong>本地时间</strong>每天在设定时刻执行（建议配置环境变量 <code>TZ=Asia/Shanghai</code>）。</li>
         <li>范围：全部目标、<strong>分组/标签（可多选）</strong>、或指定 ID（逗号分隔，见卡片 ID）。</li>
-        <li>典型用法：22:00 <strong>停用</strong> + 08:00 <strong>启用</strong> 两条规则。</li>
+        <li>可指定星期（0=周一 … 6=周日），典型用法：22:00 <strong>停用</strong> + 08:00 <strong>启用</strong> 两条规则。</li>
+      </ul>
+    </section>
+
+    <section class="help-card">
+      <h2><i class="bi bi-bell me-2"></i>告警系统</h2>
+      <p>导航栏「更多 → 告警」打开告警管理，含 4 个页签。</p>
+      <h3>告警规则</h3>
+      <ul>
+        <li>可创建<strong>多条</strong>规则，每条规则独立评估并产生告警记录。</li>
+        <li><strong>丢包条件</strong>：最近 N 个样本中丢包率 ≥ 阈值（%），或连续丢包 ≥ 次数，满足其一即触发。</li>
+        <li><strong>延迟条件</strong>：最近 N 个样本中延迟 ≥ 阈值（ms）的次数达到设定值即触发。</li>
+        <li><strong>样本窗口</strong>：评估使用的最近探测样本数（如 60 个）。</li>
+        <li><strong>范围</strong>：全部目标 / 分组（多选）/ 标签（多选）/ 指定 ID。</li>
+        <li><strong>重复提醒</strong>：0 = 仅触发时推送一次；>0 = 每隔 N 分钟重复推送直到恢复。</li>
+        <li>故障解除后<strong>自动恢复</strong>，产生「已恢复」记录。</li>
+      </ul>
+      <h3>告警屏蔽</h3>
+      <ul>
+        <li>在指定<strong>时间范围</strong>内屏蔽告警，支持按全部 / 分组 / 标签 / 指定 ID 选择目标。</li>
+        <li>屏蔽期间不触发新告警；屏蔽中已触发的告警会自动恢复。</li>
+      </ul>
+      <h3>历史告警</h3>
+      <ul>
+        <li>可查看告警记录：规则、目标、状态（告警中/已恢复）、详情、通知次数；可按状态筛选。</li>
+      </ul>
+      <h3>推送设置（邮件）</h3>
+      <ul>
+        <li>配置 <strong>SMTP</strong> 服务器、端口、用户名/授权码、发件人、收件人及 TLS 开关。</li>
+        <li>告警触发、恢复、重复提醒时向收件人发送邮件。</li>
       </ul>
     </section>
 
     <section class="help-card">
       <h2><i class="bi bi-docker me-2"></i>部署提示</h2>
       <ul>
-        <li>镜像需 <code>--cap-add=NET_RAW</code> 以支持 ping；数据目录挂载到 <code>/data</code>（如 <code>-v /path/ytping:/data</code>）。</li>
+        <li>镜像需 <code>--cap-add=NET_RAW</code> 以支持 ICMP；数据目录挂载到 <code>/data</code>（如 <code>-v /path/ytping:/data</code>）。</li>
         <li>端口映射示例：<code>-p 3000:3000</code>。离线包导入与运行参数见项目 <code>DOCKER-YTPING.md</code>。</li>
         <li>仅暴露 Web 端口；数据库为容器内 SQLite 文件，无单独数据库端口。</li>
       </ul>

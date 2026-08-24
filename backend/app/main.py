@@ -9,10 +9,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .alerts import run_alerter
 from .auth import ensure_admin, make_auth_dependency
 from .compressor import run_compressor
 from .database import DB_PATH, init_db
 from .routers import metrics, schedules, targets
+from .routers import alerts as alerts_router
 from .routers import auth as auth_router
 from .scheduler import run_schedule_checker
 from .state import ping_manager
@@ -58,6 +60,7 @@ app.include_router(auth_router.router)
 app.include_router(targets.router, dependencies=[Depends(_require_auth)])
 app.include_router(schedules.router, dependencies=[Depends(_require_auth)])
 app.include_router(metrics.router, dependencies=[Depends(_require_auth)])
+app.include_router(alerts_router.router, dependencies=[Depends(_require_auth)])
 
 
 @app.get("/health", include_in_schema=False)
@@ -72,6 +75,7 @@ async def on_startup() -> None:
     await ping_manager.start()
     asyncio.create_task(run_compressor(DB_PATH), name="compressor")
     asyncio.create_task(run_schedule_checker(DB_PATH), name="schedule-checker")
+    asyncio.create_task(run_alerter(DB_PATH), name="alerter")
     logger.info("Application started")
 
 

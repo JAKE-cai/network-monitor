@@ -345,18 +345,29 @@
       <button class="btn btn-sm btn-outline-secondary py-0" @click="fetchAll" :disabled="loading">
         <i class="bi bi-arrow-clockwise me-1" :class="{'spin': loading}"></i>刷新
       </button>
-      <a href="/help.html" class="btn btn-sm btn-outline-secondary py-0" title="使用说明">
-        <i class="bi bi-journal-text me-1"></i>使用说明
-      </a>
       <button class="btn btn-sm btn-outline-secondary py-0" @click="openBatchModal" title="批量启用/停用">
         <i class="bi bi-toggles me-1"></i>批量启停
-      </button>
-      <button class="btn btn-sm btn-outline-secondary py-0" @click="openScheduleModal" title="定时启停">
-        <i class="bi bi-clock-history me-1"></i>定时任务
       </button>
       <button class="btn btn-sm btn-primary py-0" @click="openAddModal">
         <i class="bi bi-plus-lg me-1"></i>添加目标
       </button>
+      <!-- more menu: 使用说明 / 定时任务 / 告警 -->
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary py-0" data-bs-toggle="dropdown" title="更多功能">
+          <i class="bi bi-three-dots me-1"></i>更多
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" style="font-size:13px">
+          <li><a class="dropdown-item" href="/help.html">
+            <i class="bi bi-journal-text me-2"></i>使用说明
+          </a></li>
+          <li><a class="dropdown-item" href="#" @click.prevent="openScheduleModal">
+            <i class="bi bi-clock-history me-2"></i>定时任务
+          </a></li>
+          <li><a class="dropdown-item" href="#" @click.prevent="openAlertModal">
+            <i class="bi bi-bell me-2"></i>告警
+          </a></li>
+        </ul>
+      </div>
       <!-- theme toggle -->
       <button class="btn btn-sm btn-outline-secondary py-0" @click="toggleTheme" :title="isDark?'切换浅色':'切换深色'">
         <i class="bi" :class="isDark ? 'bi-sun' : 'bi-moon-stars'"></i>
@@ -1052,6 +1063,273 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════ Alerts Modal ═══════════════════════ -->
+  <div class="modal fade" id="modalAlerts" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header py-2">
+          <h5 class="modal-title"><i class="bi bi-bell me-2"></i>告警管理</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-0">
+          <ul class="nav nav-tabs px-3 pt-2" style="border-bottom:1px solid var(--border)!important">
+            <li class="nav-item"><a class="nav-link" :class="{active: alertTab==='rules'}" href="#" @click.prevent="alertTab='rules'; fetchAlertRules()">告警规则</a></li>
+            <li class="nav-item"><a class="nav-link" :class="{active: alertTab==='suppress'}" href="#" @click.prevent="alertTab='suppress'; fetchSuppressions()">告警屏蔽</a></li>
+            <li class="nav-item"><a class="nav-link" :class="{active: alertTab==='history'}" href="#" @click.prevent="alertTab='history'; fetchAlertHistory()">历史告警</a></li>
+            <li class="nav-item"><a class="nav-link" :class="{active: alertTab==='notify'}" href="#" @click.prevent="alertTab='notify'; fetchSmtpSettings()">推送设置</a></li>
+          </ul>
+
+          <!-- ══ Rules tab ══ -->
+          <div v-show="alertTab==='rules'" class="p-3">
+            <div class="table-responsive mb-3" v-if="alertRules.length">
+              <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
+                <thead><tr style="color:var(--text-muted)">
+                  <th>名称</th><th>条件</th><th>范围</th><th>窗口</th><th>重复提醒</th><th>状态</th><th></th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="r in alertRules" :key="r.id">
+                    <td>{{ r.name }}</td>
+                    <td>{{ formatAlertCondition(r) }}</td>
+                    <td>{{ formatScope({scope_type:r.scope_type, scope_value:r.scope_value}) }}</td>
+                    <td>最近 {{ r.window_count }} 个样本</td>
+                    <td>{{ r.repeat_min>0 ? r.repeat_min+' 分钟' : '仅触发一次' }}</td>
+                    <td>{{ r.enabled ? '开' : '关' }}</td>
+                    <td class="text-nowrap">
+                      <button class="btn btn-link btn-sm p-0 me-2" @click="editAlertRule(r)">编辑</button>
+                      <button class="btn btn-link btn-sm p-0 text-danger" @click="deleteAlertRule(r)">删除</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="text-center py-3" style="color:var(--text-muted);font-size:13px">暂无告警规则</div>
+            <hr style="border-color:var(--border)">
+            <h6 class="mb-3">{{ alertRuleEditId ? '编辑规则' : '新建规则' }}</h6>
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label text-secondary">名称</label>
+                <input class="form-control form-control-sm" v-model="alertRuleForm.name" placeholder="如：核心链路丢包告警" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label text-secondary">条件类型</label>
+                <select class="form-select form-select-sm" v-model="alertRuleForm.condition">
+                  <option value="loss">丢包</option>
+                  <option value="latency">延迟</option>
+                </select>
+              </div>
+              <div class="col-md-4" v-if="alertRuleForm.condition==='loss'">
+                <label class="form-label text-secondary">丢包率阈值 (%)</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.loss_pct" min="0" max="100" />
+              </div>
+              <div class="col-md-4" v-if="alertRuleForm.condition==='loss'">
+                <label class="form-label text-secondary">连续丢包次数 (0=不启用)</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.loss_consecutive" min="0" />
+              </div>
+              <div class="col-md-4" v-if="alertRuleForm.condition==='latency'">
+                <label class="form-label text-secondary">延迟阈值 (ms)</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.latency_ms" min="0" />
+              </div>
+              <div class="col-md-4" v-if="alertRuleForm.condition==='latency'">
+                <label class="form-label text-secondary">超过次数</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.latency_count" min="0" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label text-secondary">样本窗口 (最近N个探测)</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.window_count" min="1" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label text-secondary">重复提醒间隔 (分钟, 0=仅一次)</label>
+                <input class="form-control form-control-sm" type="number" v-model.number="alertRuleForm.repeat_min" min="0" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label text-secondary">范围类型</label>
+                <select class="form-select form-select-sm" v-model="alertRuleForm.scope_type">
+                  <option value="all">全部目标</option>
+                  <option value="group">分组</option>
+                  <option value="tag">标签</option>
+                  <option value="ids">指定 ID</option>
+                </select>
+              </div>
+              <div class="col-12" v-if="alertRuleForm.scope_type==='group'">
+                <label class="form-label text-secondary">分组（可多选）</label>
+                <div class="scope-pick" v-if="allGroups.length">
+                  <button type="button" v-for="g in allGroups" :key="g" class="filter-tag"
+                    :class="{active: alertRuleForm.scopeGroups.includes(g)}"
+                    @click="toggleAlertScopeGroup('rule', g)">{{ g }}</button>
+                </div>
+                <div v-else class="small" style="color:var(--text-muted)">暂无分组</div>
+              </div>
+              <div class="col-12" v-else-if="alertRuleForm.scope_type==='tag'">
+                <label class="form-label text-secondary">标签（可多选）</label>
+                <div class="scope-pick" v-if="allTags.length">
+                  <button type="button" v-for="tg in allTags" :key="tg" class="filter-tag"
+                    :class="{active: alertRuleForm.scopeTags.includes(tg)}"
+                    @click="toggleAlertScopeTag('rule', tg)">{{ tg }}</button>
+                </div>
+                <div v-else class="small" style="color:var(--text-muted)">暂无标签</div>
+              </div>
+              <div class="col-12" v-else-if="alertRuleForm.scope_type==='ids'">
+                <label class="form-label text-secondary">目标 ID（逗号分隔）</label>
+                <input class="form-control form-control-sm" v-model="alertRuleForm.scope_value" placeholder="1,2,3" />
+              </div>
+              <div class="col-12">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="arEnabled" v-model="alertRuleForm.enabled" />
+                  <label class="form-check-label" for="arEnabled">启用此告警规则</label>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3">
+              <button class="btn btn-sm btn-secondary" @click="resetAlertRuleForm">清空表单</button>
+              <button class="btn btn-sm btn-primary ms-2" @click="saveAlertRule" :disabled="alertSaving">
+                <span class="spinner-border spinner-border-sm me-1" v-if="alertSaving"></span>{{ alertRuleEditId ? '保存' : '添加' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- ══ Suppressions tab ══ -->
+          <div v-show="alertTab==='suppress'" class="p-3">
+            <div class="table-responsive mb-3" v-if="suppressions.length">
+              <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
+                <thead><tr style="color:var(--text-muted)">
+                  <th>名称</th><th>范围</th><th>屏蔽时间</th><th>状态</th><th></th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="s in suppressions" :key="s.id">
+                    <td>{{ s.name }}</td>
+                    <td>{{ formatScope({scope_type:s.scope_type, scope_value:s.scope_value}) }}</td>
+                    <td>{{ fmtDt(s.start_ts) }} ~ {{ fmtDt(s.end_ts) }}</td>
+                    <td>{{ s.enabled ? '开' : '关' }}</td>
+                    <td class="text-nowrap">
+                      <button class="btn btn-link btn-sm p-0 text-danger" @click="deleteSuppression(s)">删除</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="text-center py-3" style="color:var(--text-muted);font-size:13px">暂无屏蔽</div>
+            <hr style="border-color:var(--border)">
+            <h6 class="mb-3">新建屏蔽</h6>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label text-secondary">名称</label>
+                <input class="form-control form-control-sm" v-model="suppressForm.name" placeholder="如：维护窗口" />
+              </div>
+              <div class="col-md-4">
+                <label class="form-label text-secondary">范围类型</label>
+                <select class="form-select form-select-sm" v-model="suppressForm.scope_type">
+                  <option value="all">全部目标</option>
+                  <option value="group">分组</option>
+                  <option value="tag">标签</option>
+                  <option value="ids">指定 ID</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label text-secondary">目标 ID（范围=指定ID时）</label>
+                <input class="form-control form-control-sm" v-model="suppressForm.scope_value" placeholder="1,2,3" />
+              </div>
+              <div class="col-12" v-if="suppressForm.scope_type==='group'">
+                <label class="form-label text-secondary">分组（可多选）</label>
+                <div class="scope-pick" v-if="allGroups.length">
+                  <button type="button" v-for="g in allGroups" :key="g" class="filter-tag"
+                    :class="{active: suppressForm.scopeGroups.includes(g)}"
+                    @click="toggleAlertScopeGroup('sup', g)">{{ g }}</button>
+                </div>
+                <div v-else class="small" style="color:var(--text-muted)">暂无分组</div>
+              </div>
+              <div class="col-12" v-else-if="suppressForm.scope_type==='tag'">
+                <label class="form-label text-secondary">标签（可多选）</label>
+                <div class="scope-pick" v-if="allTags.length">
+                  <button type="button" v-for="tg in allTags" :key="tg" class="filter-tag"
+                    :class="{active: suppressForm.scopeTags.includes(tg)}"
+                    @click="toggleAlertScopeTag('sup', tg)">{{ tg }}</button>
+                </div>
+                <div v-else class="small" style="color:var(--text-muted)">暂无标签</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label text-secondary">开始时间</label>
+                <input class="form-control form-control-sm" type="datetime-local" v-model="suppressForm.startLocal" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label text-secondary">结束时间</label>
+                <input class="form-control form-control-sm" type="datetime-local" v-model="suppressForm.endLocal" />
+              </div>
+              <div class="col-12">
+                <button class="btn btn-sm btn-primary" @click="saveSuppression">添加屏蔽</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ══ History tab ══ -->
+          <div v-show="alertTab==='history'" class="p-3">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <select class="form-select form-select-sm" style="width:140px" v-model="alertHistoryFilter" @change="fetchAlertHistory()">
+                <option value="">全部状态</option>
+                <option value="firing">告警中</option>
+                <option value="recovered">已恢复</option>
+              </select>
+              <span class="small" style="color:var(--text-muted)">共 {{ alertHistoryTotal }} 条</span>
+            </div>
+            <div class="table-responsive" style="max-height:420px;overflow-y:auto">
+              <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
+                <thead class="sticky-top" style="background:var(--bg-card2)">
+                  <tr style="color:var(--text-muted)">
+                    <th>时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="h in alertHistory" :key="h.id">
+                    <td>{{ fmtDt(h.started_at) }}</td>
+                    <td>{{ h.alert_name || '#'+h.alert_id }}</td>
+                    <td>{{ h.target_name }} (ID{{ h.target_id }})</td>
+                    <td><span :class="h.status==='firing'?'text-danger':'text-success'">{{ h.status==='firing'?'告警中':'已恢复' }}</span></td>
+                    <td>{{ h.detail }}</td>
+                    <td>{{ h.notify_count }}</td>
+                  </tr>
+                  <tr v-if="!alertHistory.length"><td colspan="6" class="text-center text-secondary py-3">暂无记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ══ Notify (SMTP) tab ══ -->
+          <div v-show="alertTab==='notify'" class="p-3" style="max-width:560px">
+            <h6 class="mb-3">邮件推送 (SMTP)</h6>
+            <div class="mb-3">
+              <label class="form-label text-secondary">SMTP 服务器</label>
+              <input class="form-control form-control-sm" v-model="smtpForm.smtp_host" placeholder="smtp.example.com" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label text-secondary">端口</label>
+              <input class="form-control form-control-sm" type="number" v-model.number="smtpForm.smtp_port" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label text-secondary">用户名</label>
+              <input class="form-control form-control-sm" v-model="smtpForm.smtp_user" placeholder="user@example.com" autocomplete="off" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label text-secondary">密码/授权码</label>
+              <input class="form-control form-control-sm" type="password" v-model="smtpForm.smtp_password" autocomplete="new-password" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label text-secondary">发件人 (From)</label>
+              <input class="form-control form-control-sm" v-model="smtpForm.smtp_from" placeholder="留空则用用户名" />
+            </div>
+            <div class="mb-3">
+              <label class="form-label text-secondary">收件人（告警通知发送到）</label>
+              <input class="form-control form-control-sm" v-model="smtpForm.notify_email" placeholder="ops@example.com" />
+            </div>
+            <div class="mb-3 form-check">
+              <input class="form-check-input" type="checkbox" id="smtpTls" v-model="smtpForm.smtp_tls" />
+              <label class="form-check-label" for="smtpTls">使用 TLS (STARTTLS)</label>
+            </div>
+            <button class="btn btn-sm btn-primary" @click="saveSmtpSettings">保存设置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════ Change Password Modal ═══════════════════════ -->
   <div class="modal fade" id="modalChangePw" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
@@ -1252,6 +1530,34 @@ createApp({
     const scheduleForm = ref(defaultScheduleForm());
     let bsBatch = null;
     let bsSchedule = null;
+
+    // ── alerts ───────────────────────────────────────────────
+    const alertTab = ref('rules');
+    const alertRules = ref([]);
+    const alertRuleEditId = ref(null);
+    const alertSaving = ref(false);
+    const defaultAlertRuleForm = () => ({
+      name: '', condition: 'loss', scope_type: 'all', scope_value: '',
+      scopeGroups: [], scopeTags: [],
+      loss_pct: 5, loss_consecutive: 0,
+      latency_ms: 200, latency_count: 5,
+      window_count: 60, repeat_min: 30, enabled: true,
+    });
+    const alertRuleForm = ref(defaultAlertRuleForm());
+    const suppressions = ref([]);
+    const defaultSuppressForm = () => ({
+      name: '', scope_type: 'all', scope_value: '',
+      scopeGroups: [], scopeTags: [], startLocal: '', endLocal: '',
+    });
+    const suppressForm = ref(defaultSuppressForm());
+    const alertHistory = ref([]);
+    const alertHistoryTotal = ref(0);
+    const alertHistoryFilter = ref('');
+    const smtpForm = ref({
+      smtp_host: '', smtp_port: 587, smtp_user: '', smtp_password: '',
+      smtp_from: '', smtp_tls: true, notify_email: '',
+    });
+    let bsAlerts = null;
 
     // detail modal
     const sel         = ref(null);
@@ -2249,6 +2555,142 @@ createApp({
       else list.push(tg);
     }
 
+    /* ─────────────── alerts ─────────────── */
+    function formatAlertCondition(r) {
+      if (r.condition === 'loss') {
+        const bits = [];
+        if (r.loss_pct > 0) bits.push(`丢包率≥${r.loss_pct}%`);
+        if (r.loss_consecutive > 0) bits.push(`连续丢包≥${r.loss_consecutive}次`);
+        return bits.join(' 或 ') || '丢包';
+      }
+      return `延迟≥${r.latency_ms}ms 且 ${r.latency_count}次`;
+    }
+
+    function openAlertModal() {
+      alertTab.value = 'rules';
+      bsAlerts.show();
+      fetchAlertRules();
+    }
+
+    function toggleAlertScopeGroup(form, g) {
+      // form: 'rule' (告警规则) | 'sup' (告警屏蔽)
+      const list = form === 'rule' ? alertRuleForm.value.scopeGroups : suppressForm.value.scopeGroups;
+      const i = list.indexOf(g);
+      if (i >= 0) list.splice(i, 1); else list.push(g);
+    }
+    function toggleAlertScopeTag(form, tg) {
+      // form: 'rule' (告警规则) | 'sup' (告警屏蔽)
+      const list = form === 'rule' ? alertRuleForm.value.scopeTags : suppressForm.value.scopeTags;
+      const i = list.indexOf(tg);
+      if (i >= 0) list.splice(i, 1); else list.push(tg);
+    }
+    function alertScopeValueFromForm(f) {
+      if (f.scope_type === 'group') return f.scopeGroups.join(',');
+      if (f.scope_type === 'tag') return f.scopeTags.join(',');
+      return (f.scope_value || '').trim();
+    }
+
+    async function fetchAlertRules() {
+      try { alertRules.value = await api('GET', '/alerts/rules'); } catch {}
+    }
+    async function fetchSuppressions() {
+      try { suppressions.value = await api('GET', '/alerts/suppressions'); } catch {}
+    }
+    async function fetchAlertHistory() {
+      try {
+        const url = '/alerts/history?limit=200' + (alertHistoryFilter.value ? '&status=' + alertHistoryFilter.value : '');
+        const r = await api('GET', url);
+        alertHistory.value = r.items;
+        alertHistoryTotal.value = r.total;
+      } catch {}
+    }
+    async function fetchSmtpSettings() {
+      try { smtpForm.value = await api('GET', '/alerts/settings/smtp'); } catch {}
+    }
+
+    function resetAlertRuleForm() {
+      alertRuleEditId.value = null;
+      alertRuleForm.value = defaultAlertRuleForm();
+    }
+
+    function editAlertRule(r) {
+      alertRuleEditId.value = r.id;
+      alertRuleForm.value = {
+        ...r,
+        enabled: !!r.enabled,
+        scopeGroups: (r.scope_type === 'group' ? (r.scope_value || '').split(',').filter(Boolean) : []),
+        scopeTags: (r.scope_type === 'tag' ? (r.scope_value || '').split(',').filter(Boolean) : []),
+      };
+    }
+
+    async function saveAlertRule() {
+      const f = alertRuleForm.value;
+      if (!f.name.trim()) { toast('提示', '请填写规则名称', 'info'); return; }
+      if (f.condition === 'loss' && f.loss_pct <= 0 && f.loss_consecutive <= 0) {
+        toast('提示', '丢包规则需至少设置丢包率或连续丢包次数', 'info'); return;
+      }
+      if (f.condition === 'latency' && (f.latency_ms <= 0 || f.latency_count <= 0)) {
+        toast('提示', '延迟规则需设置延迟阈值和超过次数', 'info'); return;
+      }
+      alertSaving.value = true;
+      const body = {
+        name: f.name, condition: f.condition,
+        scope_type: f.scope_type, scope_value: alertScopeValueFromForm(f),
+        loss_pct: f.loss_pct || 0, loss_consecutive: f.loss_consecutive || 0,
+        latency_ms: f.latency_ms || 0, latency_count: f.latency_count || 0,
+        window_count: f.window_count || 60, repeat_min: f.repeat_min || 0, enabled: f.enabled,
+      };
+      try {
+        if (alertRuleEditId.value) await api('PUT', `/alerts/rules/${alertRuleEditId.value}`, body);
+        else await api('POST', '/alerts/rules', body);
+        toast('成功', '告警规则已保存', 'success');
+        resetAlertRuleForm();
+        await fetchAlertRules();
+      } catch (e) { toast('错误', e.message, 'error'); }
+      finally { alertSaving.value = false; }
+    }
+
+    async function deleteAlertRule(r) {
+      if (!confirm('确定删除告警规则「' + r.name + '」？')) return;
+      try {
+        await api('DELETE', `/alerts/rules/${r.id}`);
+        await fetchAlertRules();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+
+    async function saveSuppression() {
+      const f = suppressForm.value;
+      if (!f.name.trim()) { toast('提示', '请填写屏蔽名称', 'info'); return; }
+      if (!f.startLocal || !f.endLocal) { toast('提示', '请填写屏蔽时间范围', 'info'); return; }
+      const start = Math.floor(new Date(f.startLocal).getTime() / 1000);
+      const end = Math.floor(new Date(f.endLocal).getTime() / 1000);
+      if (end <= start) { toast('提示', '结束时间需晚于开始时间', 'info'); return; }
+      try {
+        await api('POST', '/alerts/suppressions', {
+          name: f.name, scope_type: f.scope_type, scope_value: alertScopeValueFromForm(f),
+          start_ts: start, end_ts: end, enabled: true,
+        });
+        toast('成功', '屏蔽已添加', 'success');
+        suppressForm.value = defaultSuppressForm();
+        await fetchSuppressions();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+
+    async function deleteSuppression(s) {
+      if (!confirm('确定删除屏蔽「' + s.name + '」？')) return;
+      try {
+        await api('DELETE', `/alerts/suppressions/${s.id}`);
+        await fetchSuppressions();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+
+    async function saveSmtpSettings() {
+      try {
+        await api('PUT', '/alerts/settings/smtp', smtpForm.value);
+        toast('成功', '邮件推送设置已保存', 'success');
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+
     function scheduleScopeValueFromForm(f) {
       if (f.scope_type === 'group') return f.scopeGroups.join(',');
       if (f.scope_type === 'tag') return f.scopeTags.join(',');
@@ -2371,6 +2813,7 @@ createApp({
       bsChangePw = new bootstrap.Modal(document.getElementById('modalChangePw'));
       bsBatch    = new bootstrap.Modal(document.getElementById('modalBatch'));
       bsSchedule = new bootstrap.Modal(document.getElementById('modalSchedule'));
+      bsAlerts   = new bootstrap.Modal(document.getElementById('modalAlerts'));
 
       document.getElementById('modalDetail').addEventListener('shown.bs.modal', async () => {
         // Load live chart first (default tab)
@@ -2417,6 +2860,12 @@ createApp({
       openScheduleModal, resetScheduleForm, saveSchedule, editSchedule, deleteSchedule,
       toggleScheduleGroup, toggleScheduleTag,
       formatWeekdays, formatScope,
+      alertTab, alertRules, alertRuleForm, alertRuleEditId, alertSaving,
+      openAlertModal, resetAlertRuleForm, editAlertRule, saveAlertRule, deleteAlertRule,
+      formatAlertCondition, toggleAlertScopeGroup, toggleAlertScopeTag,
+      suppressions, suppressForm, saveSuppression, deleteSuppression,
+      alertHistory, alertHistoryTotal, alertHistoryFilter, fetchAlertHistory,
+      fetchAlertRules, fetchSuppressions, fetchSmtpSettings, smtpForm, saveSmtpSettings,
       allGroups, allTags, filteredTargets, visibleGroups,
       packetBar, probeLabel, probeTitle,
       sel, dTab,
