@@ -66,6 +66,10 @@
 
     .nav-tabs { border-bottom: 1px solid var(--border) !important; }
     .nav-tabs .nav-link { color: var(--text-muted); border: none; padding: .5rem 1.1rem; }
+
+    /* Detail modal tab content: compact padding so chart tabs fit on a
+       typical desktop viewport without vertical scrolling. */
+    .detail-tab-body { padding: 1rem 1.25rem; }
     .nav-tabs .nav-link.active {
       color: #58a6ff; background: transparent;
       border-bottom: 2px solid #58a6ff !important;
@@ -73,9 +77,11 @@
     .nav-tabs .nav-link:hover:not(.active) { color: #e6edf3; }
 
     /* ---- Chart ---- */
-    #chartMain    { height: 420px; }
-    #chartLive    { height: 320px; }
-    #chartSummary { height: 320px; }
+    /* Height adapts to the viewport so the detail modal (scrollable) shows the
+       chart tab without vertical scrollbars on a typical desktop browser. */
+    #chartMain    { height: calc(100vh - 340px); min-height: 240px; max-height: 440px; }
+    #chartLive    { height: calc(100vh - 360px); min-height: 200px; max-height: 340px; }
+    #chartSummary { height: calc(100vh - 360px); min-height: 200px; max-height: 340px; }
 
     /* ---- Live / SSE indicator ---- */
     .live-dot {
@@ -380,14 +386,14 @@
 
   <!-- ═══════════════════════ Filter bar ═══════════════════════ -->
   <div class="filter-bar px-3 py-2 d-flex flex-wrap align-items-center gap-2">
-    <!-- Group filter -->
+    <!-- Group filter (multi-select) -->
     <span style="font-size:12px;color:var(--text-muted);flex-shrink:0">分组</span>
-    <button class="filter-tag" :class="{active: filterGroup===''}" @click="filterGroup=''">全部</button>
-    <button v-for="g in allGroups" :key="g" class="filter-tag" :class="{active: filterGroup===g}" @click="filterGroup=g">{{ g }}</button>
+    <button class="filter-tag" :class="{active: filterGroup.length===0}" @click="toggleFilter('group','')">全部</button>
+    <button v-for="g in allGroups" :key="g" class="filter-tag" :class="{active: filterGroup.includes(g)}" @click="toggleFilter('group',g)">{{ g }}</button>
 
     <span class="ms-2" style="font-size:12px;color:var(--text-muted);flex-shrink:0">标签</span>
-    <button class="filter-tag" :class="{active: filterTag===''}" @click="filterTag=''">全部</button>
-    <button v-for="tg in allTags" :key="tg" class="filter-tag" :class="{active: filterTag===tg}" @click="filterTag=tg">{{ tg }}</button>
+    <button class="filter-tag" :class="{active: filterTag.length===0}" @click="toggleFilter('tag','')">全部</button>
+    <button v-for="tg in allTags" :key="tg" class="filter-tag" :class="{active: filterTag.includes(tg)}" @click="toggleFilter('tag',tg)">{{ tg }}</button>
 
     <div class="ms-auto">
       <input type="text" v-model="filterSearch" class="form-control form-control-sm" placeholder="搜索名称/地址…" style="width:180px" />
@@ -487,7 +493,7 @@
   </div>
 
   <!-- ═══════════════════════ Detail Modal ═══════════════════════ -->
-  <div class="modal fade" id="modalDetail" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalDetail" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content" v-if="sel">
         <div class="modal-header py-2">
@@ -502,41 +508,6 @@
         </div>
 
         <div class="modal-body p-0">
-          <!-- quick stats strip -->
-          <div class="px-4 py-3 border-bottom" style="border-color:var(--border)!important">
-            <div class="d-flex justify-content-end mb-1">
-              <span style="font-size:11px;color:var(--text-muted)">近 1 分钟统计</span>
-            </div>
-            <div class="row g-3 text-center" v-if="detailStatus">
-              <div class="col">
-                <div class="stat-label">均值延迟</div>
-                <div class="fw-bold" :class="latencyColor(detailStatus.avg_latency)">
-                  {{ fmt(detailStatus.avg_latency,'ms') }}
-                </div>
-              </div>
-              <div class="col">
-                <div class="stat-label">最小延迟</div>
-                <div class="fw-bold text-success">{{ fmt(detailStatus.min_latency,'ms') }}</div>
-              </div>
-              <div class="col">
-                <div class="stat-label">最大延迟</div>
-                <div class="fw-bold text-danger">{{ fmt(detailStatus.max_latency,'ms') }}</div>
-              </div>
-              <div class="col">
-                <div class="stat-label">丢包次数</div>
-                <div class="fw-bold text-warning">{{ detailStatus.loss != null ? detailStatus.loss : '-' }}</div>
-              </div>
-              <div class="col">
-                <div class="stat-label">丢包率</div>
-                <div class="fw-bold" :class="lossColor(detailStatus.loss_rate)">{{ detailStatus.loss_rate != null ? detailStatus.loss_rate + '%' : '-' }}</div>
-              </div>
-              <div class="col">
-                <div class="stat-label">样本/分钟</div>
-                <div class="fw-bold text-secondary">{{ detailStatus.total ?? '-' }}</div>
-              </div>
-            </div>
-          </div>
-
           <!-- Tabs -->
           <ul class="nav nav-tabs px-4 mb-0">
             <li class="nav-item">
@@ -562,13 +533,9 @@
           </ul>
 
           <!-- ────── Live (5-min realtime) tab ────── -->
-          <div v-show="dTab==='live'" class="p-4">
+          <div v-show="dTab==='live'" class="detail-tab-body">
             <!-- status strip -->
             <div class="d-flex align-items-center gap-4 mb-3 flex-wrap">
-              <div class="d-flex align-items-center gap-2">
-                <span class="live-dot" :class="sseConnected?'live-dot-on':'live-dot-off'"></span>
-                <span style="font-size:12px;color:#8b949e">{{ sseConnected ? '正常' : '重连中…' }}</span>
-              </div>
               <template v-if="liveCurrent">
                 <div class="live-stat">
                   <div class="lbl">最新延迟</div>
@@ -581,6 +548,22 @@
                   <div class="live-val" :class="latencyColor(liveAvg)">
                     {{ liveAvg != null ? liveAvg.toFixed(1)+'ms' : '-' }}
                   </div>
+                </div>
+                <div class="live-stat">
+                  <div class="lbl">5分钟最小</div>
+                  <div class="live-val text-success">
+                    {{ liveMin != null ? liveMin.toFixed(1)+'ms' : '-' }}
+                  </div>
+                </div>
+                <div class="live-stat">
+                  <div class="lbl">5分钟最大</div>
+                  <div class="live-val text-danger">
+                    {{ liveMax != null ? liveMax.toFixed(1)+'ms' : '-' }}
+                  </div>
+                </div>
+                <div class="live-stat">
+                  <div class="lbl">5分钟丢包次数</div>
+                  <div class="live-val text-warning">{{ liveLossCount }}</div>
                 </div>
                 <div class="live-stat">
                   <div class="lbl">5分钟丢包率</div>
@@ -600,7 +583,7 @@
           </div>
 
           <!-- ────── Chart tab ────── -->
-          <div v-show="dTab==='chart'" class="p-4">
+          <div v-show="dTab==='chart'" class="detail-tab-body">
             <!-- range selector -->
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
               <div class="btn-group btn-group-sm">
@@ -670,11 +653,11 @@
           </div>
 
           <!-- ────── Loss events tab ────── -->
-          <div v-show="dTab==='loss'" class="p-4">
+          <div v-show="dTab==='loss'" class="detail-tab-body">
             <div v-if="lossLoading" class="text-center py-4"><div class="spinner-border text-primary"></div></div>
             <div v-else>
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <small class="text-secondary">共 {{ lossTotal }} 条丢包记录</small>
+                <small class="text-secondary">共 {{ lossMerged }} 段丢包记录（{{ lossTotal }} 次）</small>
               </div>
               <div class="table-responsive" style="max-height:380px;overflow-y:auto">
                 <table class="table table-dark table-sm table-striped mb-0 loss-events-table">
@@ -682,8 +665,14 @@
                     <tr><th>时间</th><th>状态</th></tr>
                   </thead>
                   <tbody>
-                    <tr v-for="ev in lossItems" :key="ev.ts">
-                      <td class="loss-events-time">{{ fmtDt(ev.ts) }}</td>
+                    <tr v-for="ev in lossItems" :key="ev.start_ts">
+                      <td class="loss-events-time">
+                        <template v-if="ev.start_ts === ev.end_ts">{{ fmtDt(ev.start_ts) }}</template>
+                        <template v-else>{{ fmtDt(ev.start_ts) }} ~ {{ fmtDt(ev.end_ts) }}</template>
+                        <span v-if="ev.count > 1" class="text-secondary ms-1" style="font-size:11px">
+                          （连续 {{ ev.count }} 次）
+                        </span>
+                      </td>
                       <td><span class="badge badge-loss">丢包</span></td>
                     </tr>
                     <tr v-if="lossItems.length===0">
@@ -709,7 +698,7 @@
           </div>
 
           <!-- ────── Historical summary tab ────── -->
-          <div v-show="dTab==='hist'" class="p-4">
+          <div v-show="dTab==='hist'" class="detail-tab-body">
             <!-- filter bar -->
             <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
               <div class="btn-group btn-group-sm">
@@ -772,7 +761,7 @@
                   <table class="table table-dark table-sm">
                     <thead><tr><th>延迟区间</th><th>次数</th><th>占比</th></tr></thead>
                     <tbody>
-                      <tr v-for="(v, k) in historySummary.buckets" :key="k">
+                      <tr v-for="(v, k) in summaryBuckets" :key="k">
                         <td>{{ k }}</td>
                         <td>{{ v.count.toLocaleString() }}</td>
                         <td>
@@ -1211,9 +1200,9 @@ createApp({
     const loading     = ref(false);
     const lastRefresh = ref('');
 
-    // filter state
-    const filterGroup  = ref('');
-    const filterTag    = ref('');
+    // filter state (multi-select: arrays of selected group/tag names)
+    const filterGroup  = ref([]);
+    const filterTag    = ref([]);
     const filterSearch = ref('');
 
     // batch / schedules
@@ -1244,7 +1233,6 @@ createApp({
 
     // detail modal
     const sel         = ref(null);
-    const detailStatus= ref(null);
     const dTab        = ref('live');
 
     // chart
@@ -1271,6 +1259,19 @@ createApp({
       if (!valid.length) return null;
       return valid.reduce((s, d) => s + d.latency_ms, 0) / valid.length;
     });
+    const liveMin = computed(() => {
+      const valid = liveData.value.filter(d => !d.is_loss && d.latency_ms != null);
+      if (!valid.length) return null;
+      return Math.min(...valid.map(d => d.latency_ms));
+    });
+    const liveMax = computed(() => {
+      const valid = liveData.value.filter(d => !d.is_loss && d.latency_ms != null);
+      if (!valid.length) return null;
+      return Math.max(...valid.map(d => d.latency_ms));
+    });
+    const liveLossCount = computed(() => {
+      return liveData.value.filter(d => d.is_loss).length;
+    });
     const liveLossRate = computed(() => {
       if (!liveData.value.length) return null;
       return liveData.value.filter(d => d.is_loss).length / liveData.value.length * 100;
@@ -1279,13 +1280,26 @@ createApp({
     // loss events
     const lossLoading = ref(false);
     const lossItems   = ref([]);
-    const lossTotal   = ref(0);
+    const lossTotal   = ref(0);        // raw loss count
+    const lossMerged  = ref(0);        // loss runs after merging consecutive
     const lossPage    = ref(1);
     const LOSS_LIMIT  = 50;
-    const lossTotalPages = computed(() => Math.ceil(lossTotal.value / LOSS_LIMIT) || 1);
+    const lossTotalPages = computed(() => Math.ceil(lossMerged.value / LOSS_LIMIT) || 1);
 
     // history summary
     const historySummary = ref(null);
+    // Only show buckets that actually have data (matches the pie chart filter).
+    // Return an OBJECT (not array) so the template's v-for "(v, k)" keeps the
+    // bucket-name/entry semantics.
+    const summaryBuckets = computed(() => {
+      const b = historySummary.value?.buckets;
+      if (!b) return {};
+      const out = {};
+      for (const [k, v] of Object.entries(b)) {
+        if (v.count > 0) out[k] = v;
+      }
+      return out;
+    });
     const histLoading    = ref(false);
     const histPresets    = [{l:'全部',v:'all'},{l:'近7天',v:'7D'},{l:'近30天',v:'30D'},{l:'近90天',v:'90D'}];
     const histPreset     = ref('all');
@@ -1317,8 +1331,17 @@ createApp({
     });
     const filteredTargets = computed(() => {
       let list = targets.value;
-      if (filterGroup.value) list = list.filter(t => t.group_name === filterGroup.value);
-      if (filterTag.value)   list = list.filter(t => (t.tags||'').split(',').map(x=>x.trim()).includes(filterTag.value));
+      // Multi-select groups: target matches if its group is in the selected set (OR)
+      if (filterGroup.value.length) {
+        list = list.filter(t => filterGroup.value.includes(t.group_name));
+      }
+      // Multi-select tags: target matches if ANY selected tag is present (OR)
+      if (filterTag.value.length) {
+        list = list.filter(t => {
+          const tags = (t.tags || '').split(',').map(x => x.trim()).filter(Boolean);
+          return tags.some(tg => filterTag.value.includes(tg));
+        });
+      }
       if (filterSearch.value) {
         const q = filterSearch.value.toLowerCase();
         list = list.filter(t => t.name.toLowerCase().includes(q) || t.address.toLowerCase().includes(q));
@@ -1472,6 +1495,19 @@ createApp({
       } catch {}
     }
 
+    /* toggle a multi-select group/tag filter value.
+       kind: 'group' | 'tag'; value: name, or '' to reset to "全部". */
+    function toggleFilter(kind, value) {
+      const list = kind === 'group' ? filterGroup : filterTag;
+      if (value === '') {
+        list.value = [];
+        return;
+      }
+      const i = list.value.indexOf(value);
+      if (i >= 0) list.value.splice(i, 1);
+      else list.value.push(value);
+    }
+
     /* ─────────────── data fetching ─────────────── */
     async function fetchAll() {
       loading.value = true;
@@ -1504,10 +1540,10 @@ createApp({
 
     async function openDetail(target) {
       sel.value = target;
-      detailStatus.value = statuses.value[target.id] || null;
       dTab.value = 'live';
       lossItems.value = [];
       lossTotal.value = 0;
+      lossMerged.value = 0;
       lossPage.value  = 1;
       historySummary.value  = null;
       histPreset.value      = 'all';
@@ -1530,13 +1566,6 @@ createApp({
       bsDetail.show();
       // charts rendered in shown.bs.modal handler
       fetchHistorySummary();
-    }
-
-    async function refreshDetailStatus() {
-      if (!sel.value) return;
-      try {
-        detailStatus.value = await api('GET', `/metrics/${sel.value.id}/status`);
-      } catch {}
     }
 
     /* ─────────────── SSE / live chart ─────────────── */
@@ -1869,6 +1898,7 @@ createApp({
           `/metrics/${sel.value.id}/loss-events?page=${lossPage.value}&limit=${LOSS_LIMIT}`);
         lossItems.value = r.items;
         lossTotal.value = r.total;
+        lossMerged.value = r.merged_total ?? r.items.length;
       } catch (e) {
         toast('错误', '加载丢包记录失败', 'error');
       } finally {
@@ -2096,8 +2126,8 @@ createApp({
           enabled: f.enabled,
           scope_type: f.scope_type,
           scope_value: f.scope_value || '',
-          filter_group: filterGroup.value,
-          filter_tag: filterTag.value,
+          filter_group: filterGroup.value.join(','),
+          filter_tag: filterTag.value.join(','),
           filter_search: filterSearch.value,
         };
         const res = await api('POST', '/targets/batch-enabled', body);
@@ -2266,9 +2296,8 @@ createApp({
       document.getElementById('modalDetail').addEventListener('shown.bs.modal', async () => {
         // Load live chart first (default tab)
         await loadLiveChart();
-        // Refresh historical chart and status strip in background
+        // Refresh historical chart in background
         fetchChartData();
-        refreshDetailStatus();
       });
       document.getElementById('modalDetail').addEventListener('hidden.bs.modal', () => {
         disconnectSSE();
@@ -2303,7 +2332,7 @@ createApp({
       isDark, toggleTheme,
       pwForm, pwSaving, openChangePwModal, savePassword, doLogout,
       targets, statuses, recentPkts, loading, lastRefresh,
-      filterGroup, filterTag, filterSearch,
+      filterGroup, filterTag, filterSearch, toggleFilter,
       batchForm, batchSaving, openBatchModal, doBatchEnabled,
       schedules, scheduleForm, scheduleEditId, scheduleSaving, weekdayLabels,
       openScheduleModal, resetScheduleForm, saveSchedule, editSchedule, deleteSchedule,
@@ -2311,14 +2340,14 @@ createApp({
       formatWeekdays, formatScope,
       allGroups, allTags, filteredTargets, visibleGroups,
       packetBar,
-      sel, detailStatus, dTab,
+      sel, dTab,
       chartLoading, chartEmpty, chartStats, presets, rangePreset, customActive, cStart, cEnd,
-      lossLoading, lossItems, lossTotal, lossPage, lossTotalPages,
-      historySummary, histLoading, histPresets, histPreset, histCustomActive, histStart, histEnd,
+      lossLoading, lossItems, lossTotal, lossMerged, lossPage, lossTotalPages,
+      historySummary, summaryBuckets, histLoading, histPresets, histPreset, histCustomActive, histStart, histEnd,
       applyHistPreset, applyHistCustom,
       compressKeepHours, compressing, doManualCompress,
       // live / SSE
-      liveData, liveCurrent, sseConnected, liveAvg, liveLossRate,
+      liveData, liveCurrent, sseConnected, liveAvg, liveMin, liveMax, liveLossCount, liveLossRate,
       editMode, form, saving, delTarget,
       toasts,
       goodCount, warnCount, badCount, disabledCount,

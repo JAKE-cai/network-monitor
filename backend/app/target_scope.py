@@ -83,11 +83,15 @@ async def resolve_target_ids(
         return [i for i in ids if i in valid]
 
     if scope_type == SCOPE_FILTERED:
+        # Multi-select: filter_group / filter_tag may be comma-separated lists
+        # (OR semantics, matching the frontend multi-select filter bar).
+        groups = _csv_set(filter_group)
+        tags   = _csv_set(filter_tag)
         out = []
         for r in rows:
-            if filter_group and r.get("group_name") != filter_group:
+            if groups and r.get("group_name") not in groups:
                 continue
-            if filter_tag and not _tag_matches(r.get("tags", ""), filter_tag):
+            if tags and not _tags_match_any(r.get("tags", ""), tags):
                 continue
             if filter_search:
                 name = (r.get("name") or "").lower()

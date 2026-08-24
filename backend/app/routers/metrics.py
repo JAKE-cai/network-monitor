@@ -165,7 +165,7 @@ async def get_chart(
 
 
 # ------------------------------------------------------------------ #
-# Loss events list (paginated)
+# Loss events list (paginated, consecutive losses merged into one entry)
 # ------------------------------------------------------------------ #
 
 @router.get("/{target_id}/loss-events")
@@ -191,22 +191,54 @@ async def get_loss_events(
 
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
+
+        # Probe interval of the target: consecutive loss events are merged
+        # when the gap between them is <= one interval.
+        interval_ms = 1000
+        async with db.execute(
+            "SELECT interval_ms FROM targets WHERE id=?", (target_id,)
+        ) as cur:
+            trow = await cur.fetchone()
+        if trow and trow["interval_ms"]:
+            interval_ms = trow["interval_ms"]
+
         async with db.execute(
             f"SELECT COUNT(*) AS cnt FROM ping_results WHERE {where}", params
         ) as cur:
             total = (await cur.fetchone())["cnt"]
 
+        # Fetch ALL loss timestamps in the window (chronological), merge
+        # consecutive ones into runs, then paginate over the runs so that
+        # merged_total / page / items stay consistent.
         async with db.execute(
-            f"SELECT ts FROM ping_results WHERE {where} ORDER BY ts DESC LIMIT ? OFFSET ?",
-            [*params, limit, offset],
+            f"SELECT ts FROM ping_results WHERE {where} ORDER BY ts ASC",
+            params,
         ) as cur:
-            rows = await cur.fetchall()
+            all_ts = [r["ts"] for r in await cur.fetchall()]
+
+    # gap tolerance: one interval (+ small slack for scheduling jitter)
+    gap_tol = interval_ms / 1000.0 + 1
+
+    # Merge consecutive loss timestamps into [start, end, count] runs.
+    merged: list[dict] = []
+    for ts in all_ts:
+        if merged and ts - merged[-1]["end_ts"] <= gap_tol:
+            merged[-1]["end_ts"] = ts
+            merged[-1]["count"] += 1
+        else:
+            merged.append({"start_ts": ts, "end_ts": ts, "count": 1})
+
+    # Newest first (matches previous page ordering), then paginate over runs.
+    merged.reverse()
+    merged_total = len(merged)
+    items = merged[offset:offset + limit]
 
     return {
-        "total": total,
+        "total": total,           # raw loss count (kept for the "共 N 条" label)
+        "merged_total": merged_total,  # loss runs after merging consecutive
         "page":  page,
         "limit": limit,
-        "items": [{"ts": r["ts"]} for r in rows],
+        "items": items,
     }
 
 
@@ -378,10 +410,9 @@ async def get_all_recent(seconds: int = Query(5, ge=1, le=60)):
     return {"server_ts": server_ts, "data": result}
 
 
-import asyncio as _asyncio
+import asyncio
 
-_compress_lock = _asyncio.Lock()
-_compress_task: _asyncio.Task | None = None
+_compress_lock = asyncio.Lock()
 
 
 @router.post("/compress")
@@ -392,18 +423,10 @@ async def manual_compress(
     ),
 ):
     """
-    Run compression in the background so the API returns immediately.
-    If a compression is already running, returns 409.
+    Compress raw data older than the retention window into hourly summary
+    buckets, then return the result (compressed row count and bucket count).
     """
-    global _compress_task
-    if _compress_task is not None and not _compress_task.done():
-        raise HTTPException(status_code=409, detail="压缩任务正在运行中，请稍后再试")
-
     cutoff = int(time.time()) - keep_hours * 3600
-
-    async def _run():
-        async with _compress_lock:
-            return await compress_old_data(DB_PATH, cutoff=cutoff)
-
-    _compress_task = _asyncio.create_task(_run())
-    return {"ok": True, "keep_hours": keep_hours, "status": "started"}
+    async with _compress_lock:
+        result = await compress_old_data(DB_PATH, cutoff=cutoff)
+    return {"ok": True, "keep_hours": keep_hours, **result}
