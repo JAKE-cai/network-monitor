@@ -1,6 +1,14 @@
-# 镜像 `ytping:1.5` 离线包与运行说明
+# 镜像 `ytping:1.6` 离线包与运行说明
 
-当前推荐 **`ytping:1.5`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不再依赖外网 CDN）。旧包 **`ytping:1.0`～`1.4`** 仍可 `docker load`，建议升级到 1.5。
+当前推荐 **`ytping:1.6`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不依赖外网 CDN；后端依赖已固化进镜像，服务端启动/运行全程离线）。旧包 **`ytping:1.0`～`1.5`** 仍可 `docker load`，建议升级到 1.6。
+
+## 1.6 新增能力
+
+- 探测类型扩展：**ICMP / TCP / UDP / HTTP**，探测间隔最低 **100ms**。
+- **告警系统**：多条告警规则（丢包率 / 连续丢包 / 延迟阈值+次数）、告警屏蔽（时间范围）、历史告警、**邮件推送**（SMTP）。
+- 详情页：**停用期间灰色标记**、**连续丢包合并**、历史统计压缩。
+- 首页：分组 / 标签**多选筛选**、探测类型徽标。
+- 导航栏：使用说明 / 定时任务 / 告警收进「更多」下拉菜单。
 
 ## 离线导入
 
@@ -8,14 +16,16 @@
 
 ```bash
 # 方式一：先解压再 load
-gzip -d ytping_1.5.tar.gz
-docker load -i ytping_1.5.tar
+gzip -d ytping_1.6.tar.gz
+docker load -i ytping_1.6.tar
 
 # 方式二：管道（Linux / macOS / Git Bash）
-gunzip -c ytping_1.5.tar.gz | docker load
+gunzip -c ytping_1.6.tar.gz | docker load
 ```
 
-导入成功后本地会有镜像 **`ytping:1.5`**。
+导入成功后本地会有镜像 **`ytping:1.6`**。
+
+> 兼容性：从 **1.0～1.5 升级到 1.6** 数据**完全保留**——启动时会自动执行数据库迁移（新增列/表），旧目标、历史数据、密码、SMTP 配置等均不丢失。升级只需替换镜像并重启容器，**勿删除挂载的 `/data` 数据目录**。
 
 ---
 
@@ -56,7 +66,7 @@ docker run -d --name ytping \
   -p 3000:3000 \
   -v "$(pwd)/ytping-data:/data" \
   -e PYTHONUNBUFFERED=1 \
-  ytping:1.4
+  ytping:1.6
 ```
 
 Windows PowerShell 示例：
@@ -69,7 +79,7 @@ docker run -d --name ytping `
   -p 3000:3000 `
   -v "${PWD}\ytping-data:/data" `
   -e PYTHONUNBUFFERED=1 `
-  ytping:1.4
+  ytping:1.6
 ```
 
 浏览器访问：`http://localhost:3000`（首次请尽快修改默认管理员密码）。
@@ -78,4 +88,6 @@ docker run -d --name ytping `
 
 ## 能力说明
 
-ICMP ping 需要 **`--cap-add=NET_RAW`**（与仓库 `docker-compose.yml` 一致）。若省略，探测可能失败。
+- ICMP ping 需要 **`--cap-add=NET_RAW`**（与仓库 `docker-compose.yml` 一致）。若省略，探测可能失败。
+- TCP / UDP / HTTP 探测为纯应用层，无需特殊权限。
+- **邮件推送**：告警功能本身离线可用；仅当启用「推送设置 → 邮件」时，容器需能访问配置的 **SMTP 服务器**（内网或公网）。若不配置 SMTP，告警触发/历史记录不受影响，只是不发送邮件。
