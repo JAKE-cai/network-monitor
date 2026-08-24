@@ -5,6 +5,7 @@ Resolve target IDs by scope and apply batch enable/disable with PingManager sync
 from __future__ import annotations
 
 import logging
+import time
 from typing import List, Optional
 
 import aiosqlite
@@ -18,6 +19,19 @@ SCOPE_GROUP = "group"
 SCOPE_TAG = "tag"
 SCOPE_IDS = "ids"
 SCOPE_FILTERED = "filtered"
+
+
+async def record_target_event(db_path: str, target_id: int, action: str, ts: int | None = None) -> None:
+    """Append an enable/disable event to target_events (the chart uses this to
+    grey out every paused period)."""
+    if ts is None:
+        ts = int(time.time())
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            "INSERT INTO target_events (target_id, action, ts) VALUES (?,?,?)",
+            (target_id, action, ts),
+        )
+        await db.commit()
 
 
 async def fetch_all_targets(db: aiosqlite.Connection) -> List[dict]:
@@ -114,12 +128,26 @@ async def batch_set_enabled(
         return {"updated": 0, "enabled": enabled}
 
     val = 1 if enabled else 0
+    changed: list[dict] = []
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
         placeholders = ",".join("?" * len(target_ids))
+        now = int(time.time())
+        # Only targets whose state actually flips get a timestamp + event entry,
+        # so re-applying the same state does not create spurious events.
+        async with db.execute(
+            f"SELECT id, enabled FROM targets WHERE id IN ({placeholders})",
+            target_ids,
+        ) as cur:
+            before = {r["id"]: bool(r["enabled"]) for r in await cur.fetchall()}
+        for tid in target_ids:
+            if before.get(tid) != enabled:
+                changed.append(tid)
+
+        ts_col = "enabled_at" if enabled else "disabled_at"
         await db.execute(
-            f"UPDATE targets SET enabled=? WHERE id IN ({placeholders})",
-            (val, *target_ids),
+            f"UPDATE targets SET enabled=?, {ts_col}=? WHERE id IN ({placeholders})",
+            (val, now, *target_ids),
         )
         await db.commit()
         async with db.execute(
@@ -127,6 +155,10 @@ async def batch_set_enabled(
             target_ids,
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
+
+    # Record events only for targets whose state actually changed
+    for tid in changed:
+        await record_target_event(db_path, tid, "enable" if enabled else "disable", int(time.time()))
 
     for r in rows:
         if r["enabled"]:

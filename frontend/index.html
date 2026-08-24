@@ -1239,6 +1239,7 @@ createApp({
     const chartLoading = ref(false);
     const chartEmpty   = ref(false);
     const chartStats   = ref(null);  // aggregated stats for the queried range
+    let pausedInfo     = null;       // {enabled, enabled_at, disabled_at} for the selected target
     const presets = [{l:'1H',v:'1H'},{l:'6H',v:'6H'},{l:'24H',v:'24H'},{l:'3D',v:'3D'},{l:'7D',v:'7D'}];
     const rangePreset  = ref('1H');
     const customActive = ref(false);
@@ -1553,6 +1554,7 @@ createApp({
       customActive.value    = false;
       chartEmpty.value     = false;
       chartStats.value     = null;
+      pausedInfo           = null;
       liveData.value    = [];
       liveCurrent.value = null;
       lastChartData     = null;
@@ -1745,6 +1747,10 @@ createApp({
         const e = Math.floor(new Date(cEnd.value).getTime()   / 1000);
         fetched = await api('GET', `/metrics/${sel.value.id}/chart?start=${s}&end=${e}`);
         lastChartData    = fetched;
+        // Load the target's enable/disable timestamps to mark "paused" periods.
+        try {
+          pausedInfo = await api('GET', `/metrics/${sel.value.id}/paused-at`);
+        } catch { pausedInfo = null; }
         chartEmpty.value = fetched.length === 0;
         // Aggregate stats for the queried range
         if (fetched.length > 0) {
@@ -1774,22 +1780,44 @@ createApp({
       // Render only AFTER chartLoading=false; otherwise #chartMain is still display:none
       if (fetched && fetched.length > 0 && dTab.value === 'chart') {
         await nextTick();   // let Vue apply v-show before ECharts measures the element
-        renderMainChart(fetched);
+        renderMainChart(fetched, pausedInfo);
       }
     }
 
-    function renderMainChart(data) {
+    function renderMainChart(data, pause) {
       const el = document.getElementById('chartMain');
       if (!el) return;
       if (!chartMain) chartMain = echarts.init(el, isDark.value ? 'dark' : 'light');
 
+      // ---- Paused intervals (from backend target_events) ----
+      // Every [start, end] (ms) where the target was disabled.
+      const pausedRanges = (pause && Array.isArray(pause.paused))
+        ? pause.paused.map(p => ({ start: p.start * 1000, end: p.end * 1000 }))
+        : [];
+      // Pad by one bucket (60s) so boundary buckets that overlap a pause are
+      // also hidden (bucket ts is minute-aligned vs event ts sec-level).
+      const PAUSE_PAD = 60 * 1000;
+      const inPaused = tsMs => pausedRanges.some(r =>
+        tsMs >= (r.start - PAUSE_PAD) && tsMs <= (r.end + PAUSE_PAD));
+
       const avgArr  = data.map(d => [d.ts * 1000, d.avg]);
       const minArr  = data.map(d => [d.ts * 1000, d.min]);
       const maxArr  = data.map(d => [d.ts * 1000, d.max]);
+      // Hide loss points inside paused periods so the red loss line/area does
+      // not show there (grey area covers the pause instead).
       const lossArr = data.map(d => [
         d.ts * 1000,
-        d.total > 0 ? +(d.loss / d.total * 100).toFixed(1) : 0
+        inPaused(d.ts * 1000) ? null : (d.total > 0 ? +(d.loss / d.total * 100).toFixed(1) : 0)
       ]);
+
+      // ---- Paused-period grey marker ----
+      const pausedAreas = pausedRanges.map(r => [{
+        xAxis: r.start, name: '暂停',
+        itemStyle: { color: 'rgba(110,118,129,.25)' }
+      }, {
+        xAxis: r.end,
+        itemStyle: { color: 'rgba(110,118,129,.25)' }
+      }]);
 
       chartMain.setOption({
         backgroundColor: 'transparent',
@@ -1883,7 +1911,8 @@ createApp({
             data: lossArr, smooth: false, showSymbol: false,
             lineStyle: { color: '#f85149', width: 1.5 },
             itemStyle: { color: '#f85149' },
-            areaStyle: { color: 'rgba(248,81,73,.12)' }
+            areaStyle: { color: 'rgba(248,81,73,.12)' },
+            markArea: { silent: true, data: pausedAreas }
           }
         ]
       }, true);
@@ -1921,7 +1950,7 @@ createApp({
           if (chartMain) {
             chartMain.resize();
           } else if (lastChartData && lastChartData.length > 0) {
-            renderMainChart(lastChartData);
+            renderMainChart(lastChartData, pausedInfo);
           } else {
             fetchChartData();
           }

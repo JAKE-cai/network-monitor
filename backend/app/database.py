@@ -98,6 +98,20 @@ _MIGRATIONS = [
     expires_at INTEGER NOT NULL
 )""",
     "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)",
+    # Last disable/enable timestamps (Unix seconds) – used to mark "paused"
+    # periods on the latency chart instead of showing them as packet loss.
+    "ALTER TABLE targets ADD COLUMN disabled_at INTEGER",     # NULL or last disable time
+    "ALTER TABLE targets ADD COLUMN enabled_at  INTEGER",     # NULL or last enable time
+    # Full enable/disable event history so the chart can grey out EVERY paused
+    # period (not just the most recent one).
+    """CREATE TABLE IF NOT EXISTS target_events (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_id  INTEGER NOT NULL,
+        action     TEXT    NOT NULL,     -- 'enable' | 'disable'
+        ts         INTEGER NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_te_target_ts ON target_events(target_id, ts)",
 ]
 
 

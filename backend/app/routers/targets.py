@@ -1,4 +1,5 @@
 import re
+import time
 from typing import Literal, Optional
 
 import aiosqlite
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from ..database import DB_PATH
 from ..state import ping_manager
-from ..target_scope import batch_set_enabled, resolve_target_ids
+from ..target_scope import batch_set_enabled, record_target_event, resolve_target_ids
 
 router = APIRouter(prefix="/api/targets", tags=["targets"])
 
@@ -138,17 +139,21 @@ async def _unique_clone_name(db: aiosqlite.Connection, base_name: str) -> str:
 @router.post("", status_code=201)
 async def create_target(body: TargetCreate):
     async with aiosqlite.connect(DB_PATH) as db:
+        now = int(time.time())
         cur = await db.execute(
-            """INSERT INTO targets (name, address, interval_ms, enabled, group_name, tags)
-               VALUES (?,?,?,?,?,?)""",
+            """INSERT INTO targets (name, address, interval_ms, enabled, group_name, tags,
+                                    enabled_at, disabled_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
             (body.name, body.address, body.interval_ms,
-             1 if body.enabled else 0, body.group_name, body.tags),
+             1 if body.enabled else 0, body.group_name, body.tags,
+             now if body.enabled else None, None if body.enabled else now),
         )
         await db.commit()
         target_id = cur.lastrowid
 
     if body.enabled:
         ping_manager.add_target(target_id, body.address, body.interval_ms)
+    await record_target_event(DB_PATH, target_id, "enable" if body.enabled else "disable", int(time.time()))
 
     return {"id": target_id, **body.model_dump()}
 
@@ -166,9 +171,11 @@ async def clone_target(target_id: int):
             raise HTTPException(404, "Target not found")
         src = dict(row)
         new_name = await _unique_clone_name(db, src["name"])
+        now = int(time.time())
         cur = await db.execute(
-            """INSERT INTO targets (name, address, interval_ms, enabled, group_name, tags)
-               VALUES (?,?,?,?,?,?)""",
+            """INSERT INTO targets (name, address, interval_ms, enabled, group_name, tags,
+                                    enabled_at, disabled_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
             (
                 new_name,
                 src["address"],
@@ -176,6 +183,8 @@ async def clone_target(target_id: int):
                 src["enabled"],
                 src["group_name"],
                 src["tags"],
+                now if src["enabled"] else None,
+                None if src["enabled"] else now,
             ),
         )
         await db.commit()
@@ -183,6 +192,7 @@ async def clone_target(target_id: int):
 
     if src["enabled"]:
         ping_manager.add_target(new_id, src["address"], src["interval_ms"])
+    await record_target_event(DB_PATH, new_id, "enable" if src["enabled"] else "disable", int(time.time()))
 
     return {
         "id": new_id,
@@ -214,6 +224,13 @@ async def update_target(target_id: int, body: TargetUpdate):
         if body.group_name is not None: updates["group_name"] = body.group_name
         if body.tags is not None:       updates["tags"]       = body.tags
 
+        # When the enabled state actually changes, record the timestamp so the
+        # chart can mark "paused" periods instead of showing red packet loss,
+        # and append an event to target_events for full history greying.
+        state_changed = (body.enabled is not None and bool(body.enabled) != bool(row["enabled"]))
+        if state_changed:
+            updates["enabled_at" if body.enabled else "disabled_at"] = int(time.time())
+
         if updates:
             set_clause = ", ".join(f"{k}=?" for k in updates)
             await db.execute(
@@ -221,6 +238,9 @@ async def update_target(target_id: int, body: TargetUpdate):
                 (*updates.values(), target_id),
             )
             await db.commit()
+
+        if state_changed:
+            await record_target_event(DB_PATH, target_id, "enable" if body.enabled else "disable")
 
         async with db.execute(
             "SELECT * FROM targets WHERE id=?", (target_id,)

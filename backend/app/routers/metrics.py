@@ -4,7 +4,7 @@ import time
 from typing import Optional
 
 import aiosqlite
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from ..auth import make_sse_auth_dependency
@@ -162,6 +162,60 @@ async def get_chart(
         }
         for r in rows
     ]
+
+
+@router.get("/{target_id}/paused-at")
+async def get_paused_at(target_id: int):
+    """Return the target's enable/disable status plus EVERY paused interval
+    (derived from target_events), so the chart can grey out all paused periods
+    instead of showing them as red packet loss."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT enabled, enabled_at, disabled_at FROM targets WHERE id=?",
+            (target_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Target not found")
+
+        async with db.execute(
+            "SELECT action, ts FROM target_events WHERE target_id=? ORDER BY ts ASC, id ASC",
+            (target_id,),
+        ) as cur:
+            events = [(r["action"], r["ts"]) for r in await cur.fetchall()]
+
+    enabled_now = bool(row["enabled"])
+
+    # Reconstruct paused intervals from the event timeline.
+    # A 'disable' starts a paused run; the next 'enable' ends it. If the target
+    # is currently disabled and the last event was a disable, extend to now.
+    paused: list[dict] = []
+    pause_start: int | None = None
+    last_action: str | None = None
+    for action, ts in events:
+        if action == "disable" and pause_start is None:
+            pause_start = ts
+        elif action == "enable" and pause_start is not None:
+            paused.append({"start": pause_start, "end": ts})
+            pause_start = None
+        last_action = action
+
+    if pause_start is not None:
+        # still paused up to now
+        paused.append({"start": pause_start, "end": int(time.time())})
+    elif not enabled_now and pause_start is None and last_action != "disable":
+        # enabled=0 but no disable event recorded (e.g. legacy data before
+        # events were tracked): fall back to disabled_at if present.
+        if row["disabled_at"]:
+            paused.append({"start": row["disabled_at"], "end": int(time.time())})
+
+    return {
+        "enabled": enabled_now,
+        "enabled_at": row["enabled_at"],
+        "disabled_at": row["disabled_at"],
+        "paused": paused,
+    }
 
 
 # ------------------------------------------------------------------ #
