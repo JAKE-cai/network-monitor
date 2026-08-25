@@ -49,7 +49,7 @@ gunzip -c ytping_1.6.tar.gz | docker load
 | `ENV` | `production` 时关闭 Swagger 文档（默认即为 production） | `-e ENV=production` |
 | `ALLOWED_ORIGINS` | CORS 允许来源，逗号分隔；留空则等同 `*` | `-e ALLOWED_ORIGINS=https://monitor.example.com` |
 | `PYTHONUNBUFFERED` | 建议 `1`，日志实时输出 | `-e PYTHONUNBUFFERED=1` |
-| `TZ` | 定时启停任务使用的本地时区 | `-e TZ=Asia/Shanghai` |
+| `TZ` | **定时启停任务使用的本地时区**。未设置时容器默认 UTC，定时任务会按 UTC 触发（与本地时间偏移），**务必设置** | `-e TZ=Asia/Shanghai` |
 
 ---
 
@@ -66,6 +66,7 @@ docker run -d --name ytping \
   -p 3000:3000 \
   -v "$(pwd)/ytping-data:/data" \
   -e PYTHONUNBUFFERED=1 \
+  -e TZ=Asia/Shanghai \
   ytping:1.6
 ```
 
@@ -79,8 +80,27 @@ docker run -d --name ytping `
   -p 3000:3000 `
   -v "${PWD}\ytping-data:/data" `
   -e PYTHONUNBUFFERED=1 `
+  -e TZ=Asia/Shanghai `
   ytping:1.6
 ```
+
+Podman（Red Hat / 内网服务器）示例：
+
+```bash
+# 容器默认以 appuser（UID 1000）运行，数据目录属主请设为 1000，否则容器无法写入数据库；
+# 如需指定其它 UID，请用 --user <uid>:<gid> 并保持目录属主一致。
+mkdir -p /home/user/ytping
+podman run -d --name ytping \
+  --restart unless-stopped \
+  --cap-add=NET_RAW \
+  -p 3000:3000 \
+  -v /home/user/ytping:/data \
+  -e PYTHONUNBUFFERED=1 \
+  -e TZ=Asia/Shanghai \
+  docker.io/library/ytping:1.6
+```
+
+> **TZ 必填**：定时启停按容器本地时间触发，未设 `TZ` 时容器默认 UTC，会导致「每日启用」等任务按 UTC 时刻执行（比北京时间晚 8 小时）。重启后可用 `podman exec ytping date` 验证时区已生效（应显示 `CST`）。
 
 浏览器访问：`http://localhost:3000`（首次请尽快修改默认管理员密码）。
 
