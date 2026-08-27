@@ -1286,7 +1286,7 @@
                 <option value="">全部状态</option>
                 <option value="firing">告警中</option>
                 <option value="recovered">已恢复未确认</option>
-                <option value="confirmed">已确认</option>
+                <option value="confirmed">历史告警</option>
               </select>
               <span class="small" style="color:var(--text-muted)">共 {{ alertHistoryTotal }} 条</span>
             </div>
@@ -1294,17 +1294,19 @@
               <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
                 <thead class="sticky-top" style="background:var(--bg-card2)">
                   <tr style="color:var(--text-muted)">
-                    <th>时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th><th></th>
+                    <th>发生时间</th><th>恢复时间</th><th>确认时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="h in alertHistory" :key="h.id">
                     <td>{{ fmtDt(h.started_at) }}</td>
+                    <td>{{ h.recovered_at ? fmtDt(h.recovered_at) : '-' }}</td>
+                    <td>{{ h.confirmed_at ? fmtDt(h.confirmed_at) : '-' }}</td>
                     <td>{{ h.alert_name || '#'+h.alert_id }}</td>
                     <td>{{ h.target_name }} (ID{{ h.target_id }})</td>
                     <td>
                       <span v-if="h.status==='firing'" class="text-danger">告警中</span>
-                      <span v-else-if="h.status==='confirmed'" class="text-success">已确认</span>
+                      <span v-else-if="h.status==='confirmed'" class="text-success">历史告警</span>
                       <span v-else class="text-secondary">已恢复未确认</span>
                     </td>
                     <td>{{ h.detail }}</td>
@@ -1312,9 +1314,10 @@
                     <td class="text-nowrap">
                       <button v-if="h.status==='recovered'" class="btn btn-link btn-sm p-0 text-success" @click="confirmHistory(h)" title="确认已处理">确认</button>
                       <button v-if="h.status==='confirmed'" class="btn btn-link btn-sm p-0 text-secondary" @click="unconfirmHistory(h)" title="撤销确认">反确认</button>
+                      <button class="btn btn-link btn-sm p-0 text-danger" @click="deleteHistory(h)" title="删除该记录">删除</button>
                     </td>
                   </tr>
-                  <tr v-if="!alertHistory.length"><td colspan="7" class="text-center text-secondary py-3">暂无记录</td></tr>
+                  <tr v-if="!alertHistory.length"><td colspan="9" class="text-center text-secondary py-3">暂无记录</td></tr>
                 </tbody>
               </table>
             </div>
@@ -2700,6 +2703,15 @@ createApp({
         await fetchAlertHistory();
       } catch (e) { toast('失败', e?.message || '操作失败', 'danger'); }
     }
+    async function deleteHistory(h) {
+      if (!confirm('确定删除该告警记录？此操作不可恢复。')) return;
+      try {
+        await api('DELETE', `/alerts/history/${h.id}`);
+        toast('成功', '告警记录已删除', 'success');
+        await fetchAlertHistory();
+        fetchAlertCounts();
+      } catch (e) { toast('失败', e?.message || '操作失败', 'danger'); }
+    }
     async function fetchSmtpSettings() {
       try { smtpForm.value = await api('GET', '/alerts/settings/smtp'); } catch {}
     }
@@ -2977,7 +2989,7 @@ createApp({
       suppressions, suppressForm, saveSuppression, deleteSuppression,
       alertHistory, alertHistoryTotal, alertHistoryFilter, fetchAlertHistory,
       alertCounts, fetchAlertCounts,
-      confirmHistory, unconfirmHistory,
+      confirmHistory, unconfirmHistory, deleteHistory,
       fetchAlertRules, fetchSuppressions, fetchSmtpSettings, smtpForm, saveSmtpSettings,
       allGroups, allTags, filteredTargets, visibleGroups,
       packetBar, probeLabel, probeTitle,

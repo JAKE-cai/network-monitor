@@ -201,6 +201,20 @@ async def unconfirm_history(hid: int):
     return {"ok": True, "id": hid, "status": "recovered"}
 
 
+@router.delete("/history/{hid}")
+async def delete_history(hid: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id FROM alert_history WHERE id=?", (hid,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(404, "记录不存在")
+        await db.execute("DELETE FROM alert_history WHERE id=?", (hid,))
+        await db.commit()
+    return {"ok": True, "id": hid}
+
+
 # ─────────────────────── Suppressions ───────────────────────
 
 @router.get("/suppressions")
