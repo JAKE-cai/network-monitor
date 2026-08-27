@@ -11,6 +11,7 @@ Conditions (rule.condition):
 
 import asyncio
 import logging
+import re
 import smtplib
 import time
 from email.mime.text import MIMEText
@@ -169,12 +170,23 @@ async def _get_smtp_config(db_path: str) -> Optional[dict]:
     }
 
 
+def _split_recipients(raw: str) -> list[str]:
+    """Split the notify_email setting into a list of addresses.
+    Supports ';' (and Chinese '；'), ',' and whitespace as separators,
+    dropping empty entries."""
+    parts = re.split(r"[;,，；\s]+", raw or "")
+    return [p.strip() for p in parts if p.strip()]
+
+
 def _send_email_sync(cfg: dict, subject: str, body: str) -> bool:
     try:
+        to_list = _split_recipients(cfg["to_email"])
+        if not to_list:
+            return False
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"] = subject
         msg["From"] = cfg["from_email"] or cfg["user"]
-        msg["To"] = cfg["to_email"]
+        msg["To"] = ", ".join(to_list)
         if cfg["use_tls"]:
             server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
             server.starttls()
@@ -182,7 +194,7 @@ def _send_email_sync(cfg: dict, subject: str, body: str) -> bool:
             server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
         if cfg["user"]:
             server.login(cfg["user"], cfg["password"])
-        server.sendmail(msg["From"], [cfg["to_email"]], msg.as_string())
+        server.sendmail(msg["From"], to_list, msg.as_string())
         server.quit()
         return True
     except Exception as exc:
@@ -277,12 +289,10 @@ async def _tick(db_path: str) -> None:
             target = target_by_id.get(tid)
             if not target or not target.get("enabled"):
                 continue
-            if _is_suppressed(target, suppressions):
-                # if currently firing and now suppressed -> recover silently
-                hid = await _get_open_history(db_path, rule["id"], tid)
-                if hid:
-                    await _recover_history(db_path, hid, now)
-                continue
+
+            # Suppression only silences email notifications: the alert is still
+            # evaluated and recorded in history, just without notifying.
+            suppressed = _is_suppressed(target, suppressions)
 
             samples = await _fetch_recent_samples(db_path, tid, rule.get("window_count") or 60, now)
             triggered, detail, value = _evaluate(rule, samples)
@@ -293,24 +303,26 @@ async def _tick(db_path: str) -> None:
                     await _open_history(db_path, rule["id"], target, detail, value)
                     hid = await _get_open_history(db_path, rule["id"], tid)
                     # send immediate notification on new firing
-                    await _notify(db_path, cfg, rule, target, detail, value, hid, is_repeat=False, now=now)
+                    await _notify(db_path, cfg, rule, target, detail, value, hid,
+                                  is_repeat=False, now=now, suppressed=suppressed)
                 else:
                     # already firing -> maybe repeat reminder
                     repeat_min = rule.get("repeat_min") or 0
                     if repeat_min and repeat_min > 0:
                         last = await _last_notify(db_path, hid)
                         if last is None or (now - last) >= repeat_min * 60:
-                            await _notify(db_path, cfg, rule, target, detail, value, hid, is_repeat=True, now=now)
+                            await _notify(db_path, cfg, rule, target, detail, value, hid,
+                                          is_repeat=True, now=now, suppressed=suppressed)
             else:
                 hid = await _get_open_history(db_path, rule["id"], tid)
                 if hid:
                     await _recover_history(db_path, hid, now)
-                    if cfg:
-                        await _notify(db_path, cfg, rule, target, f"已恢复：{detail}", value, hid, is_repeat=False, recover=True, now=now)
+                    await _notify(db_path, cfg, rule, target, f"已恢复：{detail}", value, hid,
+                                  is_repeat=False, now=now, recover=True, suppressed=suppressed)
 
 
-async def _notify(db_path: str, cfg, rule, target, detail, value, hid, *, is_repeat, now, recover=False) -> None:
-    if not cfg:
+async def _notify(db_path: str, cfg, rule, target, detail, value, hid, *, is_repeat, now, recover=False, suppressed=False) -> None:
+    if not cfg or suppressed:
         return
     subject = f"[YTPing告警] {rule['name']} - {target.get('name')}"
     if recover:

@@ -131,6 +131,12 @@
     .stats-bar span { color: var(--text-muted); }
     .stats-bar strong { color: #e6edf3; }
 
+    /* alert count dots (stats bar) */
+    .alert-count-link { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+    .alert-count-link:hover { opacity: .8; }
+    .alert-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .alert-count-num { font-weight: 700; font-size: 13px; line-height: 1; }
+
     .ping-interval-badge {
       font-size: 10px; color: var(--text-muted);
       border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
@@ -397,7 +403,17 @@
     <span>告警 <strong class="text-warning">{{ warnCount }}</strong></span>
     <span>异常 <strong class="text-danger">{{ badCount }}</strong></span>
     <span>停用 <strong>{{ disabledCount }}</strong></span>
-    <span class="ms-auto" style="color:var(--text-muted)" v-if="lastRefresh"><i class="bi bi-clock me-1"></i>{{ lastRefresh }}</span>
+    <span class="ms-auto d-flex align-items-center gap-3">
+      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('firing')" title="告警中的告警，点击查看">
+        <span class="alert-dot" style="background:#f85149"></span>
+        <span class="alert-count-num" style="color:#f85149">{{ alertCounts.firing }}</span>
+      </a>
+      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('recovered')" title="已恢复未确认的告警，点击查看">
+        <span class="alert-dot" style="background:#58a6ff"></span>
+        <span class="alert-count-num" style="color:#58a6ff">{{ alertCounts.recovered }}</span>
+      </a>
+      <span style="color:var(--text-muted)" v-if="lastRefresh"><i class="bi bi-clock me-1"></i>{{ lastRefresh }}</span>
+    </span>
   </div>
 
   <!-- ═══════════════════════ Filter bar ═══════════════════════ -->
@@ -410,6 +426,10 @@
     <span class="ms-2" style="font-size:12px;color:var(--text-muted);flex-shrink:0">标签</span>
     <button class="filter-tag" :class="{active: filterTag.length===0}" @click="toggleFilter('tag','')">全部</button>
     <button v-for="tg in allTags" :key="tg" class="filter-tag" :class="{active: filterTag.includes(tg)}" @click="toggleFilter('tag',tg)">{{ tg }}</button>
+
+    <span class="ms-2" style="font-size:12px;color:var(--text-muted);flex-shrink:0">类型</span>
+    <button class="filter-tag" :class="{active: filterType.length===0}" @click="toggleFilter('type','')">全部</button>
+    <button v-for="pt in probeTypes" :key="pt.value" class="filter-tag" :class="{active: filterType.includes(pt.value)}" @click="toggleFilter('type',pt.value)">{{ pt.label }}</button>
 
     <div class="ms-auto">
       <input type="text" v-model="filterSearch" class="form-control form-control-sm" placeholder="搜索名称/地址…" style="width:180px" />
@@ -804,7 +824,7 @@
   </div>
 
   <!-- ═══════════════════════ Add / Edit Modal ═══════════════════════ -->
-  <div class="modal fade" id="modalEdit" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalEdit" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered" style="max-width:440px">
       <div class="modal-content">
         <div class="modal-header py-2">
@@ -830,10 +850,6 @@
             <input class="form-control" v-model="form.address"
               :placeholder="addrPlaceholder" />
             <div class="form-text text-secondary">{{ addrHint }}</div>
-          </div>
-          <div class="mb-3" v-if="form.probe_type !== 'icmp'">
-            <label class="form-label text-secondary">端口 <span class="text-danger">*</span></label>
-            <input class="form-control" type="number" v-model.number="form.port" min="1" max="65535" placeholder="如: 443" />
           </div>
           <div class="mb-3">
             <label class="form-label text-secondary">检测间隔 (ms)</label>
@@ -901,7 +917,7 @@
   </div>
 
   <!-- ═══════════════════════ Batch enable/disable ═══════════════════════ -->
-  <div class="modal fade" id="modalBatch" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalBatch" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered" style="max-width:440px">
       <div class="modal-content">
         <div class="modal-header py-2">
@@ -952,8 +968,8 @@
   </div>
 
   <!-- ═══════════════════════ Schedule rules ═══════════════════════ -->
-  <div class="modal fade" id="modalSchedule" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+  <div class="modal fade" id="modalSchedule" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header py-2">
           <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>定时启停</h5>
@@ -1064,8 +1080,8 @@
   </div>
 
   <!-- ═══════════════════════ Alerts Modal ═══════════════════════ -->
-  <div class="modal fade" id="modalAlerts" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+  <div class="modal fade" id="modalAlerts" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header py-2">
           <h5 class="modal-title"><i class="bi bi-bell me-2"></i>告警管理</h5>
@@ -1209,6 +1225,9 @@
             </div>
             <div v-else class="text-center py-3" style="color:var(--text-muted);font-size:13px">暂无屏蔽</div>
             <hr style="border-color:var(--border)">
+            <p class="small mb-3" style="color:var(--text-muted)">
+              屏蔽期间<strong>仅停止邮件推送</strong>：告警仍会照常评估并写入「历史告警」，只是不发送通知。
+            </p>
             <h6 class="mb-3">新建屏蔽</h6>
             <div class="row g-2">
               <div class="col-md-4">
@@ -1263,10 +1282,11 @@
           <!-- ══ History tab ══ -->
           <div v-show="alertTab==='history'" class="p-3">
             <div class="d-flex align-items-center gap-2 mb-2">
-              <select class="form-select form-select-sm" style="width:140px" v-model="alertHistoryFilter" @change="fetchAlertHistory()">
+              <select class="form-select form-select-sm" style="width:150px" v-model="alertHistoryFilter" @change="fetchAlertHistory()">
                 <option value="">全部状态</option>
                 <option value="firing">告警中</option>
-                <option value="recovered">已恢复</option>
+                <option value="recovered">已恢复未确认</option>
+                <option value="confirmed">已确认</option>
               </select>
               <span class="small" style="color:var(--text-muted)">共 {{ alertHistoryTotal }} 条</span>
             </div>
@@ -1274,7 +1294,7 @@
               <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
                 <thead class="sticky-top" style="background:var(--bg-card2)">
                   <tr style="color:var(--text-muted)">
-                    <th>时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th>
+                    <th>时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1282,11 +1302,19 @@
                     <td>{{ fmtDt(h.started_at) }}</td>
                     <td>{{ h.alert_name || '#'+h.alert_id }}</td>
                     <td>{{ h.target_name }} (ID{{ h.target_id }})</td>
-                    <td><span :class="h.status==='firing'?'text-danger':'text-success'">{{ h.status==='firing'?'告警中':'已恢复' }}</span></td>
+                    <td>
+                      <span v-if="h.status==='firing'" class="text-danger">告警中</span>
+                      <span v-else-if="h.status==='confirmed'" class="text-success">已确认</span>
+                      <span v-else class="text-secondary">已恢复未确认</span>
+                    </td>
                     <td>{{ h.detail }}</td>
                     <td>{{ h.notify_count }}</td>
+                    <td class="text-nowrap">
+                      <button v-if="h.status==='recovered'" class="btn btn-link btn-sm p-0 text-success" @click="confirmHistory(h)" title="确认已处理">确认</button>
+                      <button v-if="h.status==='confirmed'" class="btn btn-link btn-sm p-0 text-secondary" @click="unconfirmHistory(h)" title="撤销确认">反确认</button>
+                    </td>
                   </tr>
-                  <tr v-if="!alertHistory.length"><td colspan="6" class="text-center text-secondary py-3">暂无记录</td></tr>
+                  <tr v-if="!alertHistory.length"><td colspan="7" class="text-center text-secondary py-3">暂无记录</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1317,7 +1345,8 @@
             </div>
             <div class="mb-3">
               <label class="form-label text-secondary">收件人（告警通知发送到）</label>
-              <input class="form-control form-control-sm" v-model="smtpForm.notify_email" placeholder="ops@example.com" />
+              <input class="form-control form-control-sm" v-model="smtpForm.notify_email" placeholder="ops@example.com;ops2@example.com" />
+              <div class="form-text text-secondary">多个收件人用 <code>;</code> 分隔</div>
             </div>
             <div class="mb-3 form-check">
               <input class="form-check-input" type="checkbox" id="smtpTls" v-model="smtpForm.smtp_tls" />
@@ -1331,7 +1360,7 @@
   </div>
 
   <!-- ═══════════════════════ Change Password Modal ═══════════════════════ -->
-  <div class="modal fade" id="modalChangePw" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal fade" id="modalChangePw" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered" style="max-width:400px">
       <div class="modal-content">
         <div class="modal-header py-2">
@@ -1416,6 +1445,8 @@ async function doLogin() {
     const { token } = await res.json();
     localStorage.setItem('nm-token', token);
     hideLoginOverlay();
+    // Refresh auth-gated data now that we are logged in
+    if (window.__ytping && window.__ytping.onAuthReady) window.__ytping.onAuthReady();
   } catch (e) {
     errEl.textContent = '网络错误，请重试';
     errEl.style.display = 'block';
@@ -1434,6 +1465,8 @@ async function doLogin() {
     });
     if (!res.ok) { showLoginOverlay(); return; }
     hideLoginOverlay();
+    // Token valid on load -> refresh auth-gated data now
+    if (window.__ytping && window.__ytping.onAuthReady) window.__ytping.onAuthReady();
   } catch { showLoginOverlay(); }
 })();
 </script>
@@ -1503,6 +1536,7 @@ createApp({
     // filter state (multi-select: arrays of selected group/tag names)
     const filterGroup  = ref([]);
     const filterTag    = ref([]);
+    const filterType   = ref([]);
     const filterSearch = ref('');
 
     // batch / schedules
@@ -1553,6 +1587,7 @@ createApp({
     const alertHistory = ref([]);
     const alertHistoryTotal = ref(0);
     const alertHistoryFilter = ref('');
+    const alertCounts = ref({ firing: 0, recovered: 0 });
     const smtpForm = ref({
       smtp_host: '', smtp_port: 587, smtp_user: '', smtp_password: '',
       smtp_from: '', smtp_tls: true, notify_email: '',
@@ -1654,8 +1689,8 @@ createApp({
     });
     const addrHint = computed(() => {
       switch (form.value.probe_type) {
-        case 'http': return 'HTTP 使用完整 URL（含 http:// 或 https://）';
-        case 'tcp': case 'udp': return 'TCP/UDP 使用 地址:端口 格式';
+        case 'http': return 'HTTP 使用完整 URL，端口写在地址中（如 http://1.2.3.4:8080）';
+        case 'tcp': case 'udp': return 'TCP/UDP 使用 地址:端口 格式（端口包含在地址中）';
         default: return 'ICMP 使用域名、IPv4 或 IPv6';
       }
     });
@@ -1686,6 +1721,10 @@ createApp({
           const tags = (t.tags || '').split(',').map(x => x.trim()).filter(Boolean);
           return tags.some(tg => filterTag.value.includes(tg));
         });
+      }
+      // Multi-select probe types: target matches if its probe_type is selected (OR)
+      if (filterType.value.length) {
+        list = list.filter(t => filterType.value.includes(t.probe_type || 'icmp'));
       }
       if (filterSearch.value) {
         const q = filterSearch.value.toLowerCase();
@@ -1793,6 +1832,12 @@ createApp({
     }
 
     /* ─────────────── packet bar ─────────────── */
+    const probeTypes = [
+      { value: 'icmp', label: 'ICMP' },
+      { value: 'tcp',  label: 'TCP' },
+      { value: 'udp',  label: 'UDP' },
+      { value: 'http', label: 'HTTP' },
+    ];
     function probeLabel(pt) {
       return { icmp: 'ICMP', tcp: 'TCP', udp: 'UDP', http: 'HTTP' }[pt] || 'ICMP';
     }
@@ -1846,10 +1891,10 @@ createApp({
       } catch {}
     }
 
-    /* toggle a multi-select group/tag filter value.
-       kind: 'group' | 'tag'; value: name, or '' to reset to "全部". */
+    /* toggle a multi-select group/tag/type filter value.
+       kind: 'group' | 'tag' | 'type'; value: name, or '' to reset to "全部". */
     function toggleFilter(kind, value) {
-      const list = kind === 'group' ? filterGroup : filterTag;
+      const list = kind === 'group' ? filterGroup : (kind === 'tag' ? filterTag : filterType);
       if (value === '') {
         list.value = [];
         return;
@@ -2438,20 +2483,32 @@ createApp({
       bsEdit.show();
     }
     function onProbeTypeChange() {
-      // Keep port/address placeholders sensible when switching type
-      if (form.value.probe_type !== 'icmp' && !form.value.port) {
-        form.value.port = null;
-      }
+      // Port is derived from the address (host:port) on the backend, so no
+      // separate handling needed when switching probe type.
     }
     function confirmDelete(t) {
       delTarget.value = t;
       bsDelete.show();
     }
 
+    function extractPortFromAddress(pt, addr) {
+      // Port is part of the address: tcp/udp use "host:port", http URLs embed
+      // the port. Return the resolved port or null (icmp / no port / URL).
+      if (!addr) return null;
+      if (pt === 'icmp') return null;
+      if (pt === 'http') return null;  // pinger parses the port from the URL
+      // tcp/udp: "host:port" or "[v6]:port" -> take last colon number
+      const m = addr.match(/^(.*?):(\d{1,5})$/);
+      return m ? parseInt(m[2], 10) : null;
+    }
+
     async function saveTarget() {
       if (!form.value.name.trim() || !form.value.address.trim()) {
         toast('提示', '请填写名称和地址', 'info'); return;
       }
+      // Port is derived from the address; keep it in sync so edits to the
+      // address port are picked up by the backend.
+      form.value.port = extractPortFromAddress(form.value.probe_type, form.value.address.trim());
       saving.value = true;
       try {
         if (editMode.value) {
@@ -2513,6 +2570,7 @@ createApp({
           scope_value: f.scope_value || '',
           filter_group: filterGroup.value.join(','),
           filter_tag: filterTag.value.join(','),
+          filter_type: filterType.value.join(','),
           filter_search: filterSearch.value,
         };
         const res = await api('POST', '/targets/batch-enabled', body);
@@ -2572,6 +2630,13 @@ createApp({
       fetchAlertRules();
     }
 
+    function openAlertHistory(status) {
+      alertTab.value = 'history';
+      alertHistoryFilter.value = status || '';
+      bsAlerts.show();
+      fetchAlertHistory();
+    }
+
     function toggleAlertScopeGroup(form, g) {
       // form: 'rule' (告警规则) | 'sup' (告警屏蔽)
       const list = form === 'rule' ? alertRuleForm.value.scopeGroups : suppressForm.value.scopeGroups;
@@ -2603,6 +2668,37 @@ createApp({
         alertHistory.value = r.items;
         alertHistoryTotal.value = r.total;
       } catch {}
+    }
+    async function fetchAlertCounts() {
+      try {
+        const [f, rec] = await Promise.all([
+          api('GET', '/alerts/history?limit=1&status=firing'),
+          api('GET', '/alerts/history?limit=1&status=recovered'),
+        ]);
+        alertCounts.value = { firing: f.total || 0, recovered: rec.total || 0 };
+      } catch {
+        // Retry shortly after (covers auth/race timing at initial load).
+        if (!fetchAlertCounts._retryScheduled) {
+          fetchAlertCounts._retryScheduled = true;
+          setTimeout(() => { fetchAlertCounts._retryScheduled = false; fetchAlertCounts(); }, 2000);
+        }
+      }
+    }
+    async function confirmHistory(h) {
+      if (!confirm('确认该告警已处理？确认后归入历史告警。')) return;
+      try {
+        await api('POST', `/alerts/history/${h.id}/confirm`);
+        toast('成功', '已确认告警', 'success');
+        await fetchAlertHistory();
+      } catch (e) { toast('失败', e?.message || '操作失败', 'danger'); }
+    }
+    async function unconfirmHistory(h) {
+      if (!confirm('撤销确认，将该告警恢复为「已恢复未确认」？')) return;
+      try {
+        await api('POST', `/alerts/history/${h.id}/unconfirm`);
+        toast('成功', '已撤销确认', 'success');
+        await fetchAlertHistory();
+      } catch (e) { toast('失败', e?.message || '操作失败', 'danger'); }
     }
     async function fetchSmtpSettings() {
       try { smtpForm.value = await api('GET', '/alerts/settings/smtp'); } catch {}
@@ -2841,8 +2937,23 @@ createApp({
 
       await fetchAll();
       await fetchAllRecent();
+      fetchAlertCounts();
       pollTimer   = setInterval(fetchAllStatuses, 2_000);
       recentTimer = setInterval(fetchAllRecent,   1_000);
+      setInterval(fetchAlertCounts, 30_000);
+      // Expose auth-gated refreshers to the login overlay (outside Vue).
+      window.__ytping = {
+        onAuthReady() {
+          fetchAlertCounts();
+        },
+      };
+      // If auth was already confirmed before this Vue setup ran (checkAuth is
+      // async and may finish first), the initial fetchAlertCounts may have
+      // raced the login overlay. Refresh once more once mounted.
+      const overlay = document.getElementById('loginOverlay');
+      if (overlay && overlay.style.display !== 'flex') {
+        fetchAlertCounts();
+      }
     });
 
     onUnmounted(() => {
@@ -2854,17 +2965,19 @@ createApp({
       isDark, toggleTheme,
       pwForm, pwSaving, openChangePwModal, savePassword, doLogout,
       targets, statuses, recentPkts, loading, lastRefresh,
-      filterGroup, filterTag, filterSearch, toggleFilter,
+      filterGroup, filterTag, filterType, filterSearch, toggleFilter, probeTypes,
       batchForm, batchSaving, openBatchModal, doBatchEnabled,
       schedules, scheduleForm, scheduleEditId, scheduleSaving, weekdayLabels,
       openScheduleModal, resetScheduleForm, saveSchedule, editSchedule, deleteSchedule,
       toggleScheduleGroup, toggleScheduleTag,
       formatWeekdays, formatScope,
       alertTab, alertRules, alertRuleForm, alertRuleEditId, alertSaving,
-      openAlertModal, resetAlertRuleForm, editAlertRule, saveAlertRule, deleteAlertRule,
+      openAlertModal, openAlertHistory, resetAlertRuleForm, editAlertRule, saveAlertRule, deleteAlertRule,
       formatAlertCondition, toggleAlertScopeGroup, toggleAlertScopeTag,
       suppressions, suppressForm, saveSuppression, deleteSuppression,
       alertHistory, alertHistoryTotal, alertHistoryFilter, fetchAlertHistory,
+      alertCounts, fetchAlertCounts,
+      confirmHistory, unconfirmHistory,
       fetchAlertRules, fetchSuppressions, fetchSmtpSettings, smtpForm, saveSmtpSettings,
       allGroups, allTags, filteredTargets, visibleGroups,
       packetBar, probeLabel, probeTitle,

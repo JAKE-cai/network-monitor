@@ -75,7 +75,7 @@
       <h2><i class="bi bi-bullseye me-2"></i>监控目标</h2>
       <h3>添加 / 编辑</h3>
       <ul>
-        <li>点击<strong>添加目标</strong>，选择<strong>探测类型</strong>并填写对应地址与端口。</li>
+        <li>点击<strong>添加目标</strong>，选择<strong>探测类型</strong>并填写对应地址（端口包含在地址中，无需单独填写）。</li>
         <li><strong>探测类型</strong>支持四种：</li>
         <ul>
           <li><code>ICMP Ping</code>：地址填域名 / IPv4 / IPv6（如 <code>8.8.8.8</code> 或 <code>example.com</code>）。</li>
@@ -98,7 +98,8 @@
       <h2><i class="bi bi-grid me-2"></i>首页看板</h2>
       <ul>
         <li>顶部统计：正常 / 告警 / 异常 / 停用数量（基于近 1 分钟探测）。</li>
-        <li><strong>筛选</strong>：分组、标签均支持<strong>多选</strong>（再点取消，点「全部」清空），可叠加关键词搜索；分组与标签之间为「与」关系，同组内多选为「或」。</li>
+        <li>右上角时间左侧的<strong>告警状态指示</strong>：<span style="color:#f85149">● 红色圆点</span> = 告警中的告警数，<span style="color:#58a6ff">● 蓝色圆点</span> = 已恢复未确认的告警数；点击圆点可直接跳转到「历史告警」页并按对应状态筛选。</li>
+        <li><strong>筛选</strong>：分组、标签、<strong>探测类型</strong>均支持<strong>多选</strong>（再点取消，点「全部」清空），可叠加关键词搜索；分组 / 标签 / 类型之间为「与」关系，同类内多选为「或」。</li>
         <li>卡片内<strong>20 格色块</strong>表示最近约 20 秒每秒探测结果（绿=正常 / 黄=告警 / 红=异常 / 灰=无数据）。</li>
         <li>均值延迟、丢包率标注为「近 1 分钟」；卡片显示探测类型徽标（ICMP/TCP/UDP/HTTP）。</li>
       </ul>
@@ -111,7 +112,7 @@
         <li><strong>延迟趋势</strong>：1H～7D 快选或自定义时间范围，查看 Min/Avg/Max 与丢包率曲线及区间统计；<strong>停用期间以灰色标记</strong>（非红色丢包）。</li>
         <li><strong>丢包记录</strong>：分页浏览历史丢包；<strong>连续丢包合并为一条记录</strong>并显示时间区间与次数。</li>
         <li><strong>历史统计</strong>：超过 7 天的原始数据压缩为延迟分布桶（8 档）与丢包比例；可筛选时间并<strong>手动压缩</strong>更早的原始数据。</li>
-        <li>点击弹窗外部空白处可关闭详情。</li>
+        <li>所有弹窗（详情 / 添加编辑 / 批量启停 / 定时任务 / 告警 / 修改密码等）均支持<strong>点击外部空白处关闭</strong>。</li>
       </ul>
     </section>
 
@@ -148,16 +149,18 @@
       <h3>告警屏蔽</h3>
       <ul>
         <li>在指定<strong>时间范围</strong>内屏蔽告警，支持按全部 / 分组 / 标签 / 指定 ID 选择目标。</li>
-        <li>屏蔽期间不触发新告警；屏蔽中已触发的告警会自动恢复。</li>
+        <li>屏蔽期间<strong>仅停止邮件推送</strong>：告警仍会照常评估并写入「历史告警」，只是不发送通知。</li>
       </ul>
       <h3>历史告警</h3>
       <ul>
-        <li>可查看告警记录：规则、目标、状态（告警中/已恢复）、详情、通知次数；可按状态筛选。</li>
+        <li>可查看告警记录：规则、目标、状态、详情、通知次数；可按状态筛选（告警中 / 已恢复未确认 / 已确认）。</li>
+        <li>「已恢复未确认」的记录可点击<strong>确认</strong>归入历史告警；已确认的记录可<strong>反确认</strong>撤销。</li>
       </ul>
       <h3>推送设置（邮件）</h3>
       <ul>
         <li>配置 <strong>SMTP</strong> 服务器、端口、用户名/授权码、发件人、收件人及 TLS 开关。</li>
-        <li>告警触发、恢复、重复提醒时向收件人发送邮件。</li>
+        <li>收件人支持<strong>多个</strong>，用英文分号 <code>;</code> 分隔（如 <code>a@x.com;b@x.com</code>）。</li>
+        <li>告警触发、恢复、重复提醒时向全部收件人发送邮件。</li>
       </ul>
     </section>
 

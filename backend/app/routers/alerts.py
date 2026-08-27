@@ -1,5 +1,6 @@
 """Alert rules / history / suppressions / SMTP settings API."""
 
+import time
 from typing import Literal, Optional
 
 import aiosqlite
@@ -158,6 +159,46 @@ async def list_history(
         ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     return {"total": total, "items": rows}
+
+
+# Confirm / un-confirm a recovered alert (moves it to "history" as acknowledged)
+@router.post("/history/{hid}/confirm")
+async def confirm_history(hid: int):
+    now = int(time.time())
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT status FROM alert_history WHERE id=?", (hid,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(404, "记录不存在")
+        if row[0] == "firing":
+            raise HTTPException(400, "告警仍在触发中，无法确认")
+        await db.execute(
+            "UPDATE alert_history SET status='confirmed', confirmed_at=? WHERE id=?",
+            (now, hid),
+        )
+        await db.commit()
+    return {"ok": True, "id": hid, "status": "confirmed"}
+
+
+@router.post("/history/{hid}/unconfirm")
+async def unconfirm_history(hid: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT status FROM alert_history WHERE id=?", (hid,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(404, "记录不存在")
+        if row[0] != "confirmed":
+            raise HTTPException(400, "仅已确认的记录可反确认")
+        await db.execute(
+            "UPDATE alert_history SET status='recovered', confirmed_at=NULL WHERE id=?",
+            (hid,),
+        )
+        await db.commit()
+    return {"ok": True, "id": hid, "status": "recovered"}
 
 
 # ─────────────────────── Suppressions ───────────────────────

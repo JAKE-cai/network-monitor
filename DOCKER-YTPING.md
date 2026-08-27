@@ -1,31 +1,32 @@
-# 镜像 `ytping:1.6` 离线包与运行说明
+# 镜像 `ytping:1.7` 离线包与运行说明
 
-当前推荐 **`ytping:1.6`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不依赖外网 CDN；后端依赖已固化进镜像，服务端启动/运行全程离线）。旧包 **`ytping:1.0`～`1.5`** 仍可 `docker load`，建议升级到 1.6。
+当前推荐 **`ytping:1.7`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不依赖外网 CDN；后端依赖已固化进镜像，服务端启动/运行全程离线）。旧包 **`ytping:1.0`～`1.6`** 仍可 `docker load`，建议升级到 1.7。
 
-## 1.6 新增能力
+## 1.7 新增能力（自 1.6 起）
 
-- 探测类型扩展：**ICMP / TCP / UDP / HTTP**，探测间隔最低 **100ms**。
-- **告警系统**：多条告警规则（丢包率 / 连续丢包 / 延迟阈值+次数）、告警屏蔽（时间范围）、历史告警、**邮件推送**（SMTP）。
+- 探测类型扩展：**ICMP / TCP / UDP / HTTP**，探测间隔最低 **100ms**；端口包含在地址中，无需单独填写。
+- **告警系统**：多条告警规则（丢包率 / 连续丢包 / 延迟阈值+次数）、**告警屏蔽**（仅停止邮件推送，告警仍记录到历史）、历史告警**确认 / 反确认**（已恢复 → 确认归入历史）、**邮件推送**（SMTP，收件人支持多个用 `;` 分隔）。
+- **看板**：右上角告警状态指示（红点 = 告警中、蓝点 = 已恢复未确认，点击跳转历史告警并筛选）；分组 / 标签 / **探测类型**多选筛选。
 - 详情页：**停用期间灰色标记**、**连续丢包合并**、历史统计压缩。
-- 首页：分组 / 标签**多选筛选**、探测类型徽标。
+- **弹窗交互**：所有弹窗（详情 / 添加编辑 / 批量启停 / 定时任务 / 告警 / 修改密码）支持点击外部空白处关闭。
 - 导航栏：使用说明 / 定时任务 / 告警收进「更多」下拉菜单。
 
 ## 离线导入
 
-压缩包为 **Docker `save` 的 tar 再 gzip**，导入前需解压为 tar，或管道解压：
+压缩包为 **Docker `save` 的 tar 再 gzip**（嵌套结构：gz → 外层 tar → 内层 `ytping_1.7.tar`），导入前需解压，或管道解压：
 
 ```bash
-# 方式一：先解压再 load
-gzip -d ytping_1.6.tar.gz
-docker load -i ytping_1.6.tar
+# 方式一：先解压再 load（注意是嵌套 tar，先解 gz 拿到内层 tar）
+gunzip -c ytping_1.7.tar.gz | tar -xO ytping_1.7.tar > ytping_1.7_inner.tar
+docker load -i ytping_1.7_inner.tar
 
-# 方式二：管道（Linux / macOS / Git Bash）
-gunzip -c ytping_1.6.tar.gz | docker load
+# 方式二：管道一步到位（Linux / macOS / Git Bash）
+gunzip -c ytping_1.7.tar.gz | tar -xO ytping_1.7.tar | docker load
 ```
 
-导入成功后本地会有镜像 **`ytping:1.6`**。
+导入成功后本地会有镜像 **`ytping:1.7`**。
 
-> 兼容性：从 **1.0～1.5 升级到 1.6** 数据**完全保留**——启动时会自动执行数据库迁移（新增列/表），旧目标、历史数据、密码、SMTP 配置等均不丢失。升级只需替换镜像并重启容器，**勿删除挂载的 `/data` 数据目录**。
+> 兼容性：从 **1.0～1.6 升级到 1.7** 数据**完全保留**——启动时会自动执行数据库迁移（新增列/表，如 `confirmed_at`），旧目标、历史数据、密码、SMTP 配置等均不丢失。升级只需替换镜像并重启容器，**勿删除挂载的 `/data` 数据目录**。
 
 ---
 
@@ -67,7 +68,7 @@ docker run -d --name ytping \
   -v "$(pwd)/ytping-data:/data" \
   -e PYTHONUNBUFFERED=1 \
   -e TZ=Asia/Shanghai \
-  ytping:1.6
+  ytping:1.7
 ```
 
 Windows PowerShell 示例：
@@ -81,7 +82,7 @@ docker run -d --name ytping `
   -v "${PWD}\ytping-data:/data" `
   -e PYTHONUNBUFFERED=1 `
   -e TZ=Asia/Shanghai `
-  ytping:1.6
+  ytping:1.7
 ```
 
 Podman（Red Hat / 内网服务器）示例：
@@ -97,7 +98,7 @@ podman run -d --name ytping \
   -v /home/user/ytping:/data \
   -e PYTHONUNBUFFERED=1 \
   -e TZ=Asia/Shanghai \
-  docker.io/library/ytping:1.6
+  docker.io/library/ytping:1.7
 ```
 
 > **TZ 必填**：定时启停按容器本地时间触发，未设 `TZ` 时容器默认 UTC，会导致「每日启用」等任务按 UTC 时刻执行（比北京时间晚 8 小时）。重启后可用 `podman exec ytping date` 验证时区已生效（应显示 `CST`）。

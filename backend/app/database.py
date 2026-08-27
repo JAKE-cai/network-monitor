@@ -157,6 +157,9 @@ _MIGRATIONS = [
         created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )""",
     "CREATE INDEX IF NOT EXISTS idx_as_time ON alert_suppressions(start_ts, end_ts)",
+    # Acknowledged history: a recovered alert can be confirmed as handled.
+    # status: 'firing' | 'recovered' | 'confirmed'
+    "ALTER TABLE alert_history ADD COLUMN confirmed_at INTEGER",  # NULL or confirm time
 ]
 
 

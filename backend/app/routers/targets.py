@@ -107,6 +107,7 @@ class BatchEnabledBody(BaseModel):
     scope_value: str = Field("", max_length=256)
     filter_group: str = Field("", max_length=64)
     filter_tag: str = Field("", max_length=64)
+    filter_type: str = Field("", max_length=64)
     filter_search: str = Field("", max_length=128)
 
 
@@ -160,6 +161,7 @@ async def batch_enabled(body: BatchEnabledBody):
         body.scope_value,
         filter_group=body.filter_group,
         filter_tag=body.filter_tag,
+        filter_type=body.filter_type,
         filter_search=body.filter_search,
     )
     if not ids:

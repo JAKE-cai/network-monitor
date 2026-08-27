@@ -64,6 +64,7 @@ async def resolve_target_ids(
     *,
     filter_group: str = "",
     filter_tag: str = "",
+    filter_type: str = "",
     filter_search: str = "",
 ) -> List[int]:
     async with aiosqlite.connect(db_path) as db:
@@ -72,6 +73,7 @@ async def resolve_target_ids(
     scope_type = (scope_type or SCOPE_ALL).lower()
     scope_value = (scope_value or "").strip()
     filter_search = (filter_search or "").strip().lower()
+    types = _csv_set(filter_type)
 
     if scope_type == SCOPE_ALL:
         return [r["id"] for r in rows]
@@ -97,8 +99,9 @@ async def resolve_target_ids(
         return [i for i in ids if i in valid]
 
     if scope_type == SCOPE_FILTERED:
-        # Multi-select: filter_group / filter_tag may be comma-separated lists
-        # (OR semantics, matching the frontend multi-select filter bar).
+        # Multi-select: filter_group / filter_tag / filter_type may be
+        # comma-separated lists (OR semantics, matching the frontend
+        # multi-select filter bar).
         groups = _csv_set(filter_group)
         tags   = _csv_set(filter_tag)
         out = []
@@ -106,6 +109,8 @@ async def resolve_target_ids(
             if groups and r.get("group_name") not in groups:
                 continue
             if tags and not _tags_match_any(r.get("tags", ""), tags):
+                continue
+            if types and (r.get("probe_type") or "icmp") not in types:
                 continue
             if filter_search:
                 name = (r.get("name") or "").lower()
