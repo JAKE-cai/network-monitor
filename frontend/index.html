@@ -404,11 +404,12 @@
     <span>异常 <strong class="text-danger">{{ badCount }}</strong></span>
     <span>停用 <strong>{{ disabledCount }}</strong></span>
     <span class="ms-auto d-flex align-items-center gap-3">
-      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('firing')" title="告警中的告警，点击查看">
+      <span class="d-flex align-items-center gap-2" style="color:var(--text-muted)">告警</span>
+      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('firing')" title="告警中的告警数，点击查看">
         <span class="alert-dot" style="background:#f85149"></span>
         <span class="alert-count-num" style="color:#f85149">{{ alertCounts.firing }}</span>
       </a>
-      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('recovered')" title="已恢复未确认的告警，点击查看">
+      <a href="#" class="alert-count-link" @click.prevent="openAlertHistory('recovered')" title="已恢复未确认的告警数，点击查看">
         <span class="alert-dot" style="background:#58a6ff"></span>
         <span class="alert-count-num" style="color:#58a6ff">{{ alertCounts.recovered }}</span>
       </a>
@@ -1314,7 +1315,7 @@
                     <td class="text-nowrap">
                       <button v-if="h.status==='recovered'" class="btn btn-link btn-sm p-0 text-success" @click="confirmHistory(h)" title="确认已处理">确认</button>
                       <button v-if="h.status==='confirmed'" class="btn btn-link btn-sm p-0 text-secondary" @click="unconfirmHistory(h)" title="撤销确认">反确认</button>
-                      <button class="btn btn-link btn-sm p-0 text-danger" @click="deleteHistory(h)" title="删除该记录">删除</button>
+                      <button v-if="h.status==='confirmed'" class="btn btn-link btn-sm p-0 text-danger" @click="deleteHistory(h)" title="删除该记录">删除</button>
                     </td>
                   </tr>
                   <tr v-if="!alertHistory.length"><td colspan="9" class="text-center text-secondary py-3">暂无记录</td></tr>
@@ -1913,6 +1914,7 @@ createApp({
       try {
         targets.value = await api('GET', '/targets');
         await fetchAllStatuses();
+        fetchAlertCounts();
         lastRefresh.value = new Date().toLocaleTimeString('zh-CN');
       } catch (e) {
         toast('错误', e.message, 'error');
@@ -2913,6 +2915,7 @@ createApp({
     /* ─────────────── lifecycle ─────────────── */
     let pollTimer = null;
     let recentTimer = null;
+    let alertCountTimer = null;
 
     onMounted(async () => {
       bsDetail   = new bootstrap.Modal(document.getElementById('modalDetail'));
@@ -2952,7 +2955,8 @@ createApp({
       fetchAlertCounts();
       pollTimer   = setInterval(fetchAllStatuses, 2_000);
       recentTimer = setInterval(fetchAllRecent,   1_000);
-      setInterval(fetchAlertCounts, 30_000);
+      // Refresh alert counters at the same cadence as the cards (2s).
+      alertCountTimer = setInterval(fetchAlertCounts, 2_000);
       // Expose auth-gated refreshers to the login overlay (outside Vue).
       window.__ytping = {
         onAuthReady() {
@@ -2971,6 +2975,7 @@ createApp({
     onUnmounted(() => {
       clearInterval(pollTimer);
       clearInterval(recentTimer);
+      clearInterval(alertCountTimer);
     });
 
     return {
