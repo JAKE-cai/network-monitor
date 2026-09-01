@@ -160,6 +160,16 @@ _MIGRATIONS = [
     # Acknowledged history: a recovered alert can be confirmed as handled.
     # status: 'firing' | 'recovered' | 'confirmed'
     "ALTER TABLE alert_history ADD COLUMN confirmed_at INTEGER",  # NULL or confirm time
+    # ── Alert rule effective-time windows (v1.7) ────────────────────────
+    # Multiple windows can be combined (all selected ones must be satisfied).
+    "ALTER TABLE alerts ADD COLUMN enable_date_range INTEGER NOT NULL DEFAULT 0",  # effective date range on/off
+    "ALTER TABLE alerts ADD COLUMN date_start TEXT NOT NULL DEFAULT ''",           # YYYY-MM-DD HH:MM
+    "ALTER TABLE alerts ADD COLUMN date_end   TEXT NOT NULL DEFAULT ''",           # YYYY-MM-DD HH:MM
+    "ALTER TABLE alerts ADD COLUMN enable_weekdays INTEGER NOT NULL DEFAULT 0",    # weekday filter on/off
+    "ALTER TABLE alerts ADD COLUMN weekdays   TEXT NOT NULL DEFAULT ''",           # '0,1,2,3,4,5,6' (0=Mon)
+    "ALTER TABLE alerts ADD COLUMN enable_time_range INTEGER NOT NULL DEFAULT 0",  # daily time range on/off
+    "ALTER TABLE alerts ADD COLUMN time_start TEXT NOT NULL DEFAULT ''",           # HH:MM
+    "ALTER TABLE alerts ADD COLUMN time_end   TEXT NOT NULL DEFAULT ''",           # HH:MM
 ]
 
 

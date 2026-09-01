@@ -1,6 +1,11 @@
-# 镜像 `ytping:1.7` 离线包与运行说明
+# 镜像 `ytping:1.8` 离线包与运行说明
 
-当前推荐 **`ytping:1.7`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不依赖外网 CDN；后端依赖已固化进镜像，服务端启动/运行全程离线）。旧包 **`ytping:1.0`～`1.6`** 仍可 `docker load`，建议升级到 1.7。
+当前推荐 **`ytping:1.8`**（支持内网/离线环境：Bootstrap/Vue/ECharts/Icons 已内置到 `/static/vendor`，不依赖外网 CDN；后端依赖已固化进镜像，服务端启动/运行全程离线）。旧包 **`ytping:1.0`～`1.7`** 仍可 `docker load`，建议升级到 1.8。
+
+## 1.8 新增能力（自 1.7 起）
+
+- **告警规则生效时间**：三条时间窗（生效日期范围 / 按星期 / 每日时段），可多选组合（且关系），支持跨天时段；勾选后输入不完整会被拦截。
+- **历史告警增强**：表头**排序**（升/降/取消）、**列筛选**（时间列日期时间区间筛选 + 文本列内容筛选，点漏斗图标展开）、**批量确认 / 反确认 / 删除**（复选框 + 全选）。
 
 ## 1.7 新增能力（自 1.6 起）
 
@@ -13,20 +18,20 @@
 
 ## 离线导入
 
-压缩包为 **Docker `save` 的 tar 再 gzip**（嵌套结构：gz → 外层 tar → 内层 `ytping_1.7.tar`），导入前需解压，或管道解压：
+压缩包为 **Docker `save` 的 tar 再 gzip**（嵌套结构：gz → 外层 tar → 内层 `ytping_1.8.tar`），导入前需解压，或管道解压：
 
 ```bash
 # 方式一：先解压再 load（注意是嵌套 tar，先解 gz 拿到内层 tar）
-gunzip -c ytping_1.7.tar.gz | tar -xO ytping_1.7.tar > ytping_1.7_inner.tar
-docker load -i ytping_1.7_inner.tar
+gunzip -c ytping_1.8.tar.gz | tar -xO ytping_1.8.tar > ytping_1.8_inner.tar
+docker load -i ytping_1.8_inner.tar
 
 # 方式二：管道一步到位（Linux / macOS / Git Bash）
-gunzip -c ytping_1.7.tar.gz | tar -xO ytping_1.7.tar | docker load
+gunzip -c ytping_1.8.tar.gz | tar -xO ytping_1.8.tar | docker load
 ```
 
-导入成功后本地会有镜像 **`ytping:1.7`**。
+导入成功后本地会有镜像 **`ytping:1.8`**。
 
-> 兼容性：从 **1.0～1.6 升级到 1.7** 数据**完全保留**——启动时会自动执行数据库迁移（新增列/表，如 `confirmed_at`），旧目标、历史数据、密码、SMTP 配置等均不丢失。升级只需替换镜像并重启容器，**勿删除挂载的 `/data` 数据目录**。
+> 兼容性：从 **1.0～1.7 升级到 1.8** 数据**完全保留**——启动时会自动执行数据库迁移（新增列/表，如告警规则的生效时间字段），旧目标、历史数据、密码、SMTP 配置等均不丢失。升级只需替换镜像并重启容器，**勿删除挂载的 `/data` 数据目录**。
 
 ---
 
@@ -68,7 +73,7 @@ docker run -d --name ytping \
   -v "$(pwd)/ytping-data:/data" \
   -e PYTHONUNBUFFERED=1 \
   -e TZ=Asia/Shanghai \
-  ytping:1.7
+  ytping:1.8
 ```
 
 Windows PowerShell 示例：
@@ -82,7 +87,7 @@ docker run -d --name ytping `
   -v "${PWD}\ytping-data:/data" `
   -e PYTHONUNBUFFERED=1 `
   -e TZ=Asia/Shanghai `
-  ytping:1.7
+  ytping:1.8
 ```
 
 Podman（Red Hat / 内网服务器）示例：
@@ -98,7 +103,7 @@ podman run -d --name ytping \
   -v /home/user/ytping:/data \
   -e PYTHONUNBUFFERED=1 \
   -e TZ=Asia/Shanghai \
-  docker.io/library/ytping:1.7
+  docker.io/library/ytping:1.8
 ```
 
 > **TZ 必填**：定时启停按容器本地时间触发，未设 `TZ` 时容器默认 UTC，会导致「每日启用」等任务按 UTC 时刻执行（比北京时间晚 8 小时）。重启后可用 `podman exec ytping date` 验证时区已生效（应显示 `CST`）。

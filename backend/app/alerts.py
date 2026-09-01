@@ -14,6 +14,7 @@ import logging
 import re
 import smtplib
 import time
+from datetime import datetime
 from email.mime.text import MIMEText
 from typing import List, Optional
 
@@ -110,6 +111,63 @@ def _evaluate(rule: dict, samples: list[tuple]) -> tuple[bool, str, Optional[flo
         mx = max(over)
         return True, f"{len(over)}/{total}次延迟≥{thr:.0f}ms（最大{mx:.1f}ms）", mx
     return False, f"{len(over)}/{total}次≥{thr:.0f}ms", None
+
+
+# ------------------------------------------------------------------ #
+# Rule effective-time windows
+# ------------------------------------------------------------------ #
+
+def _rule_in_window(rule: dict, now: int) -> bool:
+    """Return True if the rule's effective-time windows are satisfied at `now`.
+    Each enabled window must be satisfied (AND across windows); a window with no
+    configured value is ignored. A rule with no enabled windows always matches."""
+    if not (rule.get("enable_date_range") or rule.get("enable_weekdays") or rule.get("enable_time_range")):
+        return True
+
+    dt = datetime.fromtimestamp(now)
+
+    # 1) Date range: YYYY-MM-DD HH:MM .. YYYY-MM-DD HH:MM
+    #    (also accepts the <input type=datetime-local> "T" separator)
+    if rule.get("enable_date_range"):
+        try:
+            start = datetime.strptime((rule.get("date_start") or "").replace("T", " "), "%Y-%m-%d %H:%M")
+            end   = datetime.strptime((rule.get("date_end")   or "").replace("T", " "), "%Y-%m-%d %H:%M")
+            if not (start <= dt <= end):
+                return False
+        except ValueError:
+            return False
+
+    # 2) Weekdays: 0=Monday .. 6=Sunday
+    if rule.get("enable_weekdays"):
+        wanted = set()
+        for part in (rule.get("weekdays") or "").split(","):
+            part = part.strip()
+            if part.isdigit() and 0 <= int(part) <= 6:
+                wanted.add(int(part))
+        if not wanted:
+            return False
+        if dt.weekday() not in wanted:
+            return False
+
+    # 3) Daily time range: HH:MM .. HH:MM
+    if rule.get("enable_time_range"):
+        try:
+            ts = (dt.hour, dt.minute)
+            t0 = tuple(int(x) for x in (rule.get("time_start") or "").split(":"))
+            t1 = tuple(int(x) for x in (rule.get("time_end")   or "").split(":"))
+        except ValueError:
+            return False
+        if len(t0) < 2 or len(t1) < 2:
+            return False
+        # Handle a range that crosses midnight (e.g. 22:00-02:00)
+        if t0 <= t1:
+            if not (t0 <= ts <= t1):
+                return False
+        else:
+            if not (ts >= t0 or ts <= t1):
+                return False
+
+    return True
 
 
 # ------------------------------------------------------------------ #
@@ -284,6 +342,17 @@ async def _tick(db_path: str) -> None:
     target_by_id = {t["id"]: t for t in targets}
 
     for rule in rules:
+        # Effective-time window check: outside the window the rule is inactive.
+        if not _rule_in_window(rule, now):
+            # If any target is currently firing under this rule, recover it so
+            # history doesn't show a stale "告警中" when the rule goes inactive.
+            tids_all = await resolve_target_ids(db_path, rule["scope_type"], rule.get("scope_value") or "")
+            for tid in tids_all:
+                hid = await _get_open_history(db_path, rule["id"], tid)
+                if hid:
+                    await _recover_history(db_path, hid, now)
+            continue
+
         tids = await resolve_target_ids(db_path, rule["scope_type"], rule.get("scope_value") or "")
         for tid in tids:
             target = target_by_id.get(tid)

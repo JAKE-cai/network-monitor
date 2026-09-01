@@ -26,6 +26,15 @@ class AlertCreate(BaseModel):
     window_count: int = Field(60, ge=1, le=100000)
     repeat_min: int = Field(30, ge=0, le=100000)
     enabled: bool = True
+    # Effective-time windows (all selected ones must be satisfied)
+    enable_date_range: bool = Field(False)
+    date_start: str = Field("", max_length=20)
+    date_end: str = Field("", max_length=20)
+    enable_weekdays: bool = Field(False)
+    weekdays: str = Field("", max_length=32)
+    enable_time_range: bool = Field(False)
+    time_start: str = Field("", max_length=8)
+    time_end: str = Field("", max_length=8)
 
 
 class AlertUpdate(BaseModel):
@@ -40,6 +49,14 @@ class AlertUpdate(BaseModel):
     window_count: Optional[int] = Field(None, ge=1)
     repeat_min: Optional[int] = Field(None, ge=0)
     enabled: Optional[bool] = None
+    enable_date_range: Optional[bool] = None
+    date_start: Optional[str] = Field(None, max_length=20)
+    date_end: Optional[str] = Field(None, max_length=20)
+    enable_weekdays: Optional[bool] = None
+    weekdays: Optional[str] = Field(None, max_length=32)
+    enable_time_range: Optional[bool] = None
+    time_start: Optional[str] = Field(None, max_length=8)
+    time_end: Optional[str] = Field(None, max_length=8)
 
 
 class SuppressionCreate(BaseModel):
@@ -78,20 +95,70 @@ async def list_rules():
             rows = [dict(r) for r in await cur.fetchall()]
     for r in rows:
         r["enabled"] = bool(r["enabled"])
+        r["enable_date_range"] = bool(r["enable_date_range"])
+        r["enable_weekdays"] = bool(r["enable_weekdays"])
+        r["enable_time_range"] = bool(r["enable_time_range"])
     return rows
+
+
+def _validate_windows(data: dict) -> None:
+    """Validate the effective-time window fields. Raises ValueError on error."""
+    if data.get("enable_date_range"):
+        start = data.get("date_start") or ""
+        end   = data.get("date_end")   or ""
+        if not start or not end:
+            raise ValueError("已勾选生效时间，请填写起止日期时间")
+        try:
+            from datetime import datetime
+            # Accept both "YYYY-MM-DD HH:MM" and the <input type=datetime-local>
+            # value "YYYY-MM-DDTHH:MM".
+            s = datetime.strptime(start.replace("T", " "), "%Y-%m-%d %H:%M")
+            e = datetime.strptime(end.replace("T", " "),   "%Y-%m-%d %H:%M")
+        except ValueError:
+            raise ValueError("生效时间格式无效，应为 YYYY-MM-DD HH:MM")
+        if s >= e:
+            raise ValueError("生效时间的开始时间须早于结束时间")
+    if data.get("enable_weekdays"):
+        wds = [x.strip() for x in (data.get("weekdays") or "").split(",") if x.strip()]
+        if not wds or not all(x.isdigit() and 0 <= int(x) <= 6 for x in wds):
+            raise ValueError("已勾选按天，请至少选择一天")
+    if data.get("enable_time_range"):
+        ts = data.get("time_start") or ""
+        te = data.get("time_end")   or ""
+        if not ts or not te:
+            raise ValueError("已勾选按时段，请填写起止时间")
+        try:
+            a = tuple(int(x) for x in ts.split(":"))
+            b = tuple(int(x) for x in te.split(":"))
+        except ValueError:
+            raise ValueError("时段格式无效，应为 HH:MM")
+        if len(a) < 2 or len(b) < 2 or not (0 <= a[0] <= 23 and 0 <= a[1] <= 59 and 0 <= b[0] <= 23 and 0 <= b[1] <= 59):
+            raise ValueError("时段格式无效，应为 HH:MM")
+        if a == b:
+            raise ValueError("时段的开始与结束时间不能相同")
 
 
 @router.post("/rules", status_code=201)
 async def create_rule(body: AlertCreate):
+    try:
+        _validate_windows(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             """INSERT INTO alerts
                (name, condition, scope_type, scope_value, loss_pct, loss_consecutive,
-                latency_ms, latency_count, window_count, repeat_min, enabled)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                latency_ms, latency_count, window_count, repeat_min, enabled,
+                enable_date_range, date_start, date_end,
+                enable_weekdays, weekdays,
+                enable_time_range, time_start, time_end)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (body.name, body.condition, body.scope_type, body.scope_value,
              body.loss_pct, body.loss_consecutive, body.latency_ms, body.latency_count,
-             body.window_count, body.repeat_min, 1 if body.enabled else 0),
+             body.window_count, body.repeat_min, 1 if body.enabled else 0,
+             1 if body.enable_date_range else 0, body.date_start, body.date_end,
+             1 if body.enable_weekdays else 0, body.weekdays,
+             1 if body.enable_time_range else 0, body.time_start, body.time_end),
         )
         await db.commit()
         rid = cur.lastrowid
@@ -103,8 +170,24 @@ async def update_rule(rule_id: int, body: AlertUpdate):
     updates: dict = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "无更新内容")
-    if "enabled" in updates:
-        updates["enabled"] = 1 if updates["enabled"] else 0
+    # Load current values so window validation sees the merged result
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM alerts WHERE id=?", (rule_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(404, "规则不存在")
+        merged = dict(row)
+    merged.update(updates)
+    try:
+        _validate_windows(merged)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    # Boolean columns are stored as 0/1
+    for bool_col in ("enabled", "enable_date_range", "enable_weekdays", "enable_time_range"):
+        if bool_col in updates:
+            updates[bool_col] = 1 if updates[bool_col] else 0
     set_clause = ", ".join(f"{k}=?" for k in updates)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -213,6 +296,50 @@ async def delete_history(hid: int):
         await db.execute("DELETE FROM alert_history WHERE id=?", (hid,))
         await db.commit()
     return {"ok": True, "id": hid}
+
+
+# ─────────────────────── Batch history operations ───────────────────────
+
+class BatchHistoryBody(BaseModel):
+    ids: list[int] = Field(..., min_length=1)
+
+
+@router.post("/history/batch-confirm")
+async def batch_confirm_history(body: BatchHistoryBody):
+    now = int(time.time())
+    async with aiosqlite.connect(DB_PATH) as db:
+        ph = ",".join("?" * len(body.ids))
+        # Only recovered (not firing) records can be confirmed
+        await db.execute(
+            f"UPDATE alert_history SET status='confirmed', confirmed_at=? "
+            f"WHERE id IN ({ph}) AND status!='firing'",
+            [now, *body.ids],
+        )
+        await db.commit()
+    return {"ok": True, "count": len(body.ids)}
+
+
+@router.post("/history/batch-unconfirm")
+async def batch_unconfirm_history(body: BatchHistoryBody):
+    async with aiosqlite.connect(DB_PATH) as db:
+        ph = ",".join("?" * len(body.ids))
+        # Only confirmed records can be un-confirmed
+        await db.execute(
+            f"UPDATE alert_history SET status='recovered', confirmed_at=NULL "
+            f"WHERE id IN ({ph}) AND status='confirmed'",
+            body.ids,
+        )
+        await db.commit()
+    return {"ok": True, "count": len(body.ids)}
+
+
+@router.post("/history/batch-delete")
+async def batch_delete_history(body: BatchHistoryBody):
+    async with aiosqlite.connect(DB_PATH) as db:
+        ph = ",".join("?" * len(body.ids))
+        await db.execute(f"DELETE FROM alert_history WHERE id IN ({ph})", body.ids)
+        await db.commit()
+    return {"ok": True, "count": len(body.ids)}
 
 
 # ─────────────────────── Suppressions ───────────────────────

@@ -108,6 +108,29 @@
     .loss-events-thead { background: var(--bg-card) !important; }
     .loss-events-time { color: #e6edf3; }
 
+    /* history table: sortable headers + per-column filter */
+    .th-sort { cursor: pointer; user-select: none; white-space: nowrap; }
+    .th-sort:hover { color: #58a6ff; }
+    .th-sort .sort-icon { display: inline-block; width: 12px; margin-left: 2px; font-size: 10px; }
+    .th-filter-btn {
+      cursor: pointer; background: none; border: none; color: var(--text-muted);
+      font-size: 12px; padding: 0 2px; vertical-align: middle; line-height: 1;
+    }
+    .th-filter-btn:hover { color: #58a6ff; }
+    .th-filter-btn.active { color: #58a6ff; }
+    .hist-filter-input {
+      width: 100%; min-width: 60px; margin-top: 3px;
+      font-size: 12px; padding: 2px 6px;
+      background: var(--bg-card2) !important;
+      border: 1px solid var(--border) !important;
+      color: #e6edf3 !important;
+      border-radius: 4px;
+    }
+    .hist-filter-input:focus { border-color: #58a6ff !important; outline: none; }
+    .hist-filter-input::placeholder { color: #8b949e; font-size: 11px; opacity: 1; }
+    .hist-checkbox { cursor: pointer; accent-color: #58a6ff; }
+    .hist-batch-bar { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+
     /* ---- Misc ---- */
     .form-control, .form-select {
       background: var(--bg-card2) !important;
@@ -1101,13 +1124,14 @@
             <div class="table-responsive mb-3" v-if="alertRules.length">
               <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
                 <thead><tr style="color:var(--text-muted)">
-                  <th>名称</th><th>条件</th><th>范围</th><th>窗口</th><th>重复提醒</th><th>状态</th><th></th>
+                  <th>名称</th><th>条件</th><th>范围</th><th>生效时间</th><th>窗口</th><th>重复提醒</th><th>状态</th><th></th>
                 </tr></thead>
                 <tbody>
                   <tr v-for="r in alertRules" :key="r.id">
                     <td>{{ r.name }}</td>
                     <td>{{ formatAlertCondition(r) }}</td>
                     <td>{{ formatScope({scope_type:r.scope_type, scope_value:r.scope_value}) }}</td>
+                    <td>{{ formatAlertWindow(r) }}</td>
                     <td>最近 {{ r.window_count }} 个样本</td>
                     <td>{{ r.repeat_min>0 ? r.repeat_min+' 分钟' : '仅触发一次' }}</td>
                     <td>{{ r.enabled ? '开' : '关' }}</td>
@@ -1189,6 +1213,55 @@
                 <label class="form-label text-secondary">目标 ID（逗号分隔）</label>
                 <input class="form-control form-control-sm" v-model="alertRuleForm.scope_value" placeholder="1,2,3" />
               </div>
+
+              <!-- ── Effective-time windows ── -->
+              <div class="col-12 mt-2">
+                <div class="border rounded p-3" style="border-color:var(--border)!important">
+                  <label class="form-label text-secondary mb-2">生效时间（可多选组合，全部勾选的条件需同时满足）</label>
+
+                  <!-- 1) Date range -->
+                  <div class="mb-2">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="arDateRange" v-model="alertRuleForm.enable_date_range" />
+                      <label class="form-check-label" for="arDateRange">生效时间（起止日期）</label>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-1" v-if="alertRuleForm.enable_date_range">
+                      <input type="datetime-local" class="form-control form-control-sm" style="max-width:210px" v-model="alertRuleForm.date_start" />
+                      <span class="text-secondary">至</span>
+                      <input type="datetime-local" class="form-control form-control-sm" style="max-width:210px" v-model="alertRuleForm.date_end" />
+                    </div>
+                  </div>
+
+                  <!-- 2) Weekdays -->
+                  <div class="mb-2">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="arWeekdays" v-model="alertRuleForm.enable_weekdays" />
+                      <label class="form-check-label" for="arWeekdays">按天（周几）</label>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 mt-1" v-if="alertRuleForm.enable_weekdays">
+                      <label v-for="(lbl, wd) in weekdayLabels" :key="wd" class="form-check form-check-inline mb-0" style="font-size:13px">
+                        <input class="form-check-input" type="checkbox" :value="wd" v-model="alertRuleForm.weekdayList" />
+                        {{ lbl }}
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- 3) Daily time range -->
+                  <div class="mb-0">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="arTimeRange" v-model="alertRuleForm.enable_time_range" />
+                      <label class="form-check-label" for="arTimeRange">按时段（每天）</label>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-1" v-if="alertRuleForm.enable_time_range">
+                      <input type="time" class="form-control form-control-sm" style="max-width:140px" v-model="alertRuleForm.time_start" />
+                      <span class="text-secondary">至</span>
+                      <input type="time" class="form-control form-control-sm" style="max-width:140px" v-model="alertRuleForm.time_end" />
+                      <span class="small text-secondary">支持跨天时段（如 22:00-02:00）</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div class="col-12">
                 <div class="form-check">
                   <input class="form-check-input" type="checkbox" id="arEnabled" v-model="alertRuleForm.enabled" />
@@ -1282,7 +1355,7 @@
 
           <!-- ══ History tab ══ -->
           <div v-show="alertTab==='history'" class="p-3">
-            <div class="d-flex align-items-center gap-2 mb-2">
+            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
               <select class="form-select form-select-sm" style="width:150px" v-model="alertHistoryFilter" @change="fetchAlertHistory()">
                 <option value="">全部状态</option>
                 <option value="firing">告警中</option>
@@ -1290,16 +1363,59 @@
                 <option value="confirmed">历史告警</option>
               </select>
               <span class="small" style="color:var(--text-muted)">共 {{ alertHistoryTotal }} 条</span>
+              <span class="hist-batch-bar ms-auto">
+                <span class="small" style="color:var(--text-muted)">已选 {{ selectedHistoryIds.length }} 条</span>
+                <button class="btn btn-sm btn-outline-success py-0" :disabled="!selectedHistoryIds.length" @click="batchConfirmHistory">批量确认</button>
+                <button class="btn btn-sm btn-outline-secondary py-0" :disabled="!selectedHistoryIds.length" @click="batchUnconfirmHistory">批量反确认</button>
+                <button class="btn btn-sm btn-outline-danger py-0" :disabled="!selectedHistoryIds.length" @click="batchDeleteHistory">批量删除</button>
+              </span>
             </div>
             <div class="table-responsive" style="max-height:420px;overflow-y:auto">
               <table class="table table-sm table-hover align-middle mb-0" style="font-size:13px">
                 <thead class="sticky-top" style="background:var(--bg-card2)">
                   <tr style="color:var(--text-muted)">
-                    <th>发生时间</th><th>恢复时间</th><th>确认时间</th><th>规则</th><th>目标</th><th>状态</th><th>详情</th><th>通知次数</th><th></th>
+                    <th style="width:34px"><input type="checkbox" class="hist-checkbox" :checked="allHistorySelected" @change="toggleAllHistory" title="全选" /></th>
+                    <th class="th-sort" @click="toggleHistorySort('started_at')">发生时间<span class="sort-icon">{{ sortIcon('started_at') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.started_at}" @click.stop="toggleHistoryFilter('started_at')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('recovered_at')">恢复时间<span class="sort-icon">{{ sortIcon('recovered_at') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.recovered_at}" @click.stop="toggleHistoryFilter('recovered_at')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('confirmed_at')">确认时间<span class="sort-icon">{{ sortIcon('confirmed_at') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.confirmed_at}" @click.stop="toggleHistoryFilter('confirmed_at')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('alert_name')">规则<span class="sort-icon">{{ sortIcon('alert_name') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.alert_name}" @click.stop="toggleHistoryFilter('alert_name')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('target_name')">目标<span class="sort-icon">{{ sortIcon('target_name') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.target_name}" @click.stop="toggleHistoryFilter('target_name')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('status')">状态<span class="sort-icon">{{ sortIcon('status') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.status}" @click.stop="toggleHistoryFilter('status')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('detail')">详情<span class="sort-icon">{{ sortIcon('detail') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.detail}" @click.stop="toggleHistoryFilter('detail')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th class="th-sort" @click="toggleHistorySort('notify_count')">通知次数<span class="sort-icon">{{ sortIcon('notify_count') }}</span><button class="th-filter-btn" :class="{active: historyFilterVisible.notify_count}" @click.stop="toggleHistoryFilter('notify_count')" title="筛选"><i class="bi bi-funnel"></i></button></th>
+                    <th></th>
+                  </tr>
+                  <tr v-show="anyHistoryFilterVisible" style="color:var(--text-muted)">
+                    <td></td>
+                    <td v-show="historyFilterVisible.started_at">
+                      <div class="d-flex flex-column gap-1">
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.started_at_from" title="开始时间" />
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.started_at_to" title="结束时间" />
+                      </div>
+                    </td>
+                    <td v-show="historyFilterVisible.recovered_at">
+                      <div class="d-flex flex-column gap-1">
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.recovered_at_from" title="开始时间" />
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.recovered_at_to" title="结束时间" />
+                      </div>
+                    </td>
+                    <td v-show="historyFilterVisible.confirmed_at">
+                      <div class="d-flex flex-column gap-1">
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.confirmed_at_from" title="开始时间" />
+                        <input class="hist-filter-input" type="datetime-local" v-model="historyFilters.confirmed_at_to" title="结束时间" />
+                      </div>
+                    </td>
+                    <td v-show="historyFilterVisible.alert_name"><input class="hist-filter-input" v-model="historyFilters.alert_name" placeholder="筛选规则" /></td>
+                    <td v-show="historyFilterVisible.target_name"><input class="hist-filter-input" v-model="historyFilters.target_name" placeholder="筛选目标" /></td>
+                    <td v-show="historyFilterVisible.status"><input class="hist-filter-input" v-model="historyFilters.status" placeholder="筛选状态" /></td>
+                    <td v-show="historyFilterVisible.detail"><input class="hist-filter-input" v-model="historyFilters.detail" placeholder="筛选详情" /></td>
+                    <td v-show="historyFilterVisible.notify_count"><input class="hist-filter-input" type="number" v-model="historyFilters.notify_count" placeholder="次数" /></td>
+                    <td></td>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="h in alertHistory" :key="h.id">
+                  <tr v-for="h in displayedHistory" :key="h.id">
+                    <td><input type="checkbox" class="hist-checkbox" :value="h.id" v-model="selectedHistoryIds" /></td>
                     <td>{{ fmtDt(h.started_at) }}</td>
                     <td>{{ h.recovered_at ? fmtDt(h.recovered_at) : '-' }}</td>
                     <td>{{ h.confirmed_at ? fmtDt(h.confirmed_at) : '-' }}</td>
@@ -1318,7 +1434,7 @@
                       <button v-if="h.status==='confirmed'" class="btn btn-link btn-sm p-0 text-danger" @click="deleteHistory(h)" title="删除该记录">删除</button>
                     </td>
                   </tr>
-                  <tr v-if="!alertHistory.length"><td colspan="9" class="text-center text-secondary py-3">暂无记录</td></tr>
+                  <tr v-if="!displayedHistory.length"><td colspan="10" class="text-center text-secondary py-3">暂无记录</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1580,6 +1696,10 @@ createApp({
       loss_pct: 5, loss_consecutive: 0,
       latency_ms: 200, latency_count: 5,
       window_count: 60, repeat_min: 30, enabled: true,
+      // Effective-time windows (all selected ones must be satisfied)
+      enable_date_range: false, date_start: '', date_end: '',
+      enable_weekdays: false, weekdayList: [], weekdays: '',
+      enable_time_range: false, time_start: '', time_end: '',
     });
     const alertRuleForm = ref(defaultAlertRuleForm());
     const suppressions = ref([]);
@@ -1592,6 +1712,19 @@ createApp({
     const alertHistoryTotal = ref(0);
     const alertHistoryFilter = ref('');
     const alertCounts = ref({ firing: 0, recovered: 0 });
+    const historySort = ref({ key: '', dir: '' });   // { key, dir: 'asc'|'desc' }
+    // Time columns use a from/to range; text columns use a substring filter.
+    const historyFilters = ref({
+      started_at_from: '', started_at_to: '',
+      recovered_at_from: '', recovered_at_to: '',
+      confirmed_at_from: '', confirmed_at_to: '',
+      alert_name: '', target_name: '', status: '', detail: '', notify_count: '',
+    });
+    const historyFilterVisible = ref({
+      started_at: false, recovered_at: false, confirmed_at: false,
+      alert_name: false, target_name: false, status: false, detail: false, notify_count: false,
+    });
+    const selectedHistoryIds = ref([]);
     const smtpForm = ref({
       smtp_host: '', smtp_port: 587, smtp_user: '', smtp_password: '',
       smtp_from: '', smtp_tls: true, notify_email: '',
@@ -2629,6 +2762,20 @@ createApp({
       return `延迟≥${r.latency_ms}ms 且 ${r.latency_count}次`;
     }
 
+    function formatAlertWindow(r) {
+      // r has enable_date_range / enable_weekdays / enable_time_range flags
+      const bits = [];
+      if (!(r.enable_date_range || r.enable_weekdays || r.enable_time_range)) return '不限';
+      if (r.enable_date_range) bits.push(`${r.date_start || '?'} ~ ${r.date_end || '?'}`);
+      if (r.enable_weekdays) {
+        const names = ['周一','周二','周三','周四','周五','周六','周日'];
+        const days = (r.weekdays || '').split(',').map(x => parseInt(x, 10)).filter(n => n >= 0 && n <= 6);
+        bits.push(days.length ? days.map(d => names[d]).join(',') : '无');
+      }
+      if (r.enable_time_range) bits.push(`${r.time_start || '?'}-${r.time_end || '?'}`);
+      return bits.join(' | ');
+    }
+
     function openAlertModal() {
       alertTab.value = 'rules';
       bsAlerts.show();
@@ -2666,6 +2813,119 @@ createApp({
     async function fetchSuppressions() {
       try { suppressions.value = await api('GET', '/alerts/suppressions'); } catch {}
     }
+    /* history table: sortable columns + per-column filters */
+    const historyColumns = {
+      started_at:    { label: '发生时间', get: h => h.started_at || 0, type: 'num' },
+      recovered_at:  { label: '恢复时间', get: h => h.recovered_at || 0, type: 'num' },
+      confirmed_at:  { label: '确认时间', get: h => h.confirmed_at || 0, type: 'num' },
+      alert_name:    { label: '规则', get: h => (h.alert_name || '#'+h.alert_id || '').toLowerCase(), type: 'str' },
+      target_name:   { label: '目标', get: h => (h.target_name || '').toLowerCase(), type: 'str' },
+      status:        { label: '状态', get: h => h.status || '', type: 'str' },
+      detail:        { label: '详情', get: h => (h.detail || '').toLowerCase(), type: 'str' },
+      notify_count:  { label: '通知次数', get: h => h.notify_count || 0, type: 'num' },
+    };
+    const displayedHistory = computed(() => {
+      let list = alertHistory.value.slice();
+      // filter
+      const f = historyFilters.value;
+      const t = (v) => v ? new Date(v).getTime() / 1000 : null;  // datetime-local -> unix seconds
+      const inRange = (sec, from, to) => {
+        const a = t(from), b = t(to);
+        if (a != null && sec < a) return false;
+        if (b != null && sec > b) return false;
+        return true;
+      };
+      if (f.started_at_from || f.started_at_to)     list = list.filter(h => inRange(h.started_at, f.started_at_from, f.started_at_to));
+      if (f.recovered_at_from || f.recovered_at_to) list = list.filter(h => h.recovered_at && inRange(h.recovered_at, f.recovered_at_from, f.recovered_at_to));
+      if (f.confirmed_at_from || f.confirmed_at_to) list = list.filter(h => h.confirmed_at && inRange(h.confirmed_at, f.confirmed_at_from, f.confirmed_at_to));
+      if (f.alert_name)      list = list.filter(h => (h.alert_name || '#'+h.alert_id || '').toLowerCase().includes(f.alert_name.toLowerCase()));
+      if (f.target_name)     list = list.filter(h => (h.target_name || '').toLowerCase().includes(f.target_name.toLowerCase()));
+      if (f.status)          list = list.filter(h => (h.status || '').toLowerCase().includes(f.status.toLowerCase()));
+      if (f.detail)          list = list.filter(h => (h.detail || '').toLowerCase().includes(f.detail.toLowerCase()));
+      if (f.notify_count !== '' && f.notify_count != null) list = list.filter(h => String(h.notify_count) === String(f.notify_count));
+      // sort
+      const s = historySort.value;
+      if (s.key && historyColumns[s.key]) {
+        const col = historyColumns[s.key];
+        const dir = s.dir === 'desc' ? -1 : 1;
+        list.sort((a, b) => {
+          const va = col.get(a), vb = col.get(b);
+          if (va == null && vb == null) return 0;
+          if (va == null) return 1;
+          if (vb == null) return -1;
+          if (col.type === 'num') return (va - vb) * dir;
+          return String(va).localeCompare(String(vb), 'zh-CN') * dir;
+        });
+      }
+      return list;
+    });
+    function toggleHistorySort(key) {
+      const s = historySort.value;
+      if (s.key !== key) historySort.value = { key, dir: 'asc' };
+      else if (s.dir === 'asc') historySort.value = { key, dir: 'desc' };
+      else historySort.value = { key: '', dir: '' };  // third click clears sort
+    }
+    function sortIcon(key) {
+      const s = historySort.value;
+      if (s.key !== key) return '';
+      return s.dir === 'asc' ? '▲' : '▼';
+    }
+    // toggle visibility of a column's filter row (click the funnel icon)
+    function toggleHistoryFilter(key) {
+      historyFilterVisible.value[key] = !historyFilterVisible.value[key];
+    }
+    const anyHistoryFilterVisible = computed(() =>
+      Object.values(historyFilterVisible.value).some(v => v)
+    );
+    // batch selection
+    const allHistorySelected = computed(() =>
+      displayedHistory.value.length > 0 && displayedHistory.value.every(h => selectedHistoryIds.value.includes(h.id))
+    );
+    function toggleAllHistory(e) {
+      if (e.target.checked) {
+        const ids = displayedHistory.value.map(h => h.id);
+        selectedHistoryIds.value = [...new Set([...selectedHistoryIds.value, ...ids])];
+      } else {
+        const ids = new Set(displayedHistory.value.map(h => h.id));
+        selectedHistoryIds.value = selectedHistoryIds.value.filter(id => !ids.has(id));
+      }
+    }
+    async function batchConfirmHistory() {
+      const ids = selectedHistoryIds.value;
+      if (!ids.length) return;
+      if (!confirm(`批量确认 ${ids.length} 条记录？`)) return;
+      try {
+        await api('POST', '/alerts/history/batch-confirm', { ids });
+        toast('成功', `已批量确认 ${ids.length} 条`, 'success');
+        selectedHistoryIds.value = [];
+        await fetchAlertHistory();
+        fetchAlertCounts();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+    async function batchUnconfirmHistory() {
+      const ids = selectedHistoryIds.value;
+      if (!ids.length) return;
+      if (!confirm(`批量反确认 ${ids.length} 条记录？`)) return;
+      try {
+        await api('POST', '/alerts/history/batch-unconfirm', { ids });
+        toast('成功', `已批量反确认 ${ids.length} 条`, 'success');
+        selectedHistoryIds.value = [];
+        await fetchAlertHistory();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+    async function batchDeleteHistory() {
+      const ids = selectedHistoryIds.value;
+      if (!ids.length) return;
+      if (!confirm(`确定批量删除 ${ids.length} 条告警记录？此操作不可恢复。`)) return;
+      try {
+        await api('POST', '/alerts/history/batch-delete', { ids });
+        toast('成功', `已批量删除 ${ids.length} 条`, 'success');
+        selectedHistoryIds.value = [];
+        await fetchAlertHistory();
+        fetchAlertCounts();
+      } catch (e) { toast('错误', e.message, 'error'); }
+    }
+
     async function fetchAlertHistory() {
       try {
         const url = '/alerts/history?limit=200' + (alertHistoryFilter.value ? '&status=' + alertHistoryFilter.value : '');
@@ -2728,6 +2988,10 @@ createApp({
       alertRuleForm.value = {
         ...r,
         enabled: !!r.enabled,
+        enable_date_range: !!r.enable_date_range,
+        enable_weekdays: !!r.enable_weekdays,
+        enable_time_range: !!r.enable_time_range,
+        weekdayList: (r.weekdays || '').split(',').map(x => x.trim()).filter(Boolean),
         scopeGroups: (r.scope_type === 'group' ? (r.scope_value || '').split(',').filter(Boolean) : []),
         scopeTags: (r.scope_type === 'tag' ? (r.scope_value || '').split(',').filter(Boolean) : []),
       };
@@ -2742,6 +3006,24 @@ createApp({
       if (f.condition === 'latency' && (f.latency_ms <= 0 || f.latency_count <= 0)) {
         toast('提示', '延迟规则需设置延迟阈值和超过次数', 'info'); return;
       }
+      // Effective-time window validation
+      if (f.enable_date_range) {
+        if (!f.date_start || !f.date_end) {
+          toast('提示', '已勾选「生效时间」，请填写起止日期时间', 'info'); return;
+        }
+        if (f.date_start >= f.date_end) {
+          toast('提示', '生效时间的开始时间须早于结束时间', 'info'); return;
+        }
+      }
+      if (f.enable_weekdays && !(f.weekdayList && f.weekdayList.length)) {
+        toast('提示', '已勾选「按天」，请至少选择一天', 'info'); return;
+      }
+      if (f.enable_time_range && (!f.time_start || !f.time_end)) {
+        toast('提示', '已勾选「按时段」，请填写起止时间', 'info'); return;
+      }
+      if (f.enable_time_range && f.time_start === f.time_end) {
+        toast('提示', '时段的开始与结束时间不能相同', 'info'); return;
+      }
       alertSaving.value = true;
       const body = {
         name: f.name, condition: f.condition,
@@ -2749,6 +3031,15 @@ createApp({
         loss_pct: f.loss_pct || 0, loss_consecutive: f.loss_consecutive || 0,
         latency_ms: f.latency_ms || 0, latency_count: f.latency_count || 0,
         window_count: f.window_count || 60, repeat_min: f.repeat_min || 0, enabled: f.enabled,
+        // Effective-time windows
+        enable_date_range: !!f.enable_date_range,
+        date_start: f.date_start || '',
+        date_end: f.date_end || '',
+        enable_weekdays: !!f.enable_weekdays,
+        weekdays: (f.weekdayList || []).sort().join(','),
+        enable_time_range: !!f.enable_time_range,
+        time_start: f.time_start || '',
+        time_end: f.time_end || '',
       };
       try {
         if (alertRuleEditId.value) await api('PUT', `/alerts/rules/${alertRuleEditId.value}`, body);
@@ -2990,9 +3281,13 @@ createApp({
       formatWeekdays, formatScope,
       alertTab, alertRules, alertRuleForm, alertRuleEditId, alertSaving,
       openAlertModal, openAlertHistory, resetAlertRuleForm, editAlertRule, saveAlertRule, deleteAlertRule,
-      formatAlertCondition, toggleAlertScopeGroup, toggleAlertScopeTag,
+      formatAlertCondition, formatAlertWindow, toggleAlertScopeGroup, toggleAlertScopeTag,
       suppressions, suppressForm, saveSuppression, deleteSuppression,
       alertHistory, alertHistoryTotal, alertHistoryFilter, fetchAlertHistory,
+      displayedHistory, historySort, historyFilters, toggleHistorySort, sortIcon,
+      historyFilterVisible, anyHistoryFilterVisible, toggleHistoryFilter,
+      selectedHistoryIds, allHistorySelected, toggleAllHistory,
+      batchConfirmHistory, batchUnconfirmHistory, batchDeleteHistory,
       alertCounts, fetchAlertCounts,
       confirmHistory, unconfirmHistory, deleteHistory,
       fetchAlertRules, fetchSuppressions, fetchSmtpSettings, smtpForm, saveSmtpSettings,
